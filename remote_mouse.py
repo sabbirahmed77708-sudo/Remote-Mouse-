@@ -17,7 +17,9 @@ Options:
 import argparse
 import ctypes
 import hmac
+import html as htmllib
 import json
+import math
 import os
 import platform
 import secrets
@@ -154,6 +156,321 @@ def encode_png(w, h, bgra):
             + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
             + chunk(b"IDAT", zlib.compress(bytes(raw), 1))
             + chunk(b"IEND", b""))
+
+
+# --------------------------------------------------------------------------
+# QR code (byte mode, error correction M, versions 1-6) - stdlib only
+# --------------------------------------------------------------------------
+_QR_EC = {1: (10, 1), 2: (16, 1), 3: (26, 1), 4: (18, 2), 5: (24, 2), 6: (16, 4)}  # ec cw per block, blocks
+_QR_TOTAL = {1: 26, 2: 44, 3: 70, 4: 100, 5: 134, 6: 172}
+_QR_ALIGN = {1: [], 2: [6, 18], 3: [6, 22], 4: [6, 26], 5: [6, 30], 6: [6, 34]}
+_QR_MASKS = [
+    lambda x, y: (x + y) % 2 == 0,
+    lambda x, y: y % 2 == 0,
+    lambda x, y: x % 3 == 0,
+    lambda x, y: (x + y) % 3 == 0,
+    lambda x, y: (x // 3 + y // 2) % 2 == 0,
+    lambda x, y: x * y % 2 + x * y % 3 == 0,
+    lambda x, y: (x * y % 2 + x * y % 3) % 2 == 0,
+    lambda x, y: ((x + y) % 2 + x * y % 3) % 2 == 0,
+]
+
+
+def _gf_mul(x, y):
+    z = 0
+    for i in range(7, -1, -1):
+        z = (z << 1) ^ ((z >> 7) * 0x11D)
+        z ^= ((y >> i) & 1) * x
+    return z
+
+
+def _rs_generator(degree):
+    res = [0] * (degree - 1) + [1]
+    root = 1
+    for _ in range(degree):
+        for j in range(degree):
+            res[j] = _gf_mul(res[j], root)
+            if j + 1 < degree:
+                res[j] ^= res[j + 1]
+        root = _gf_mul(root, 2)
+    return res
+
+
+def _rs_remainder(data, gen):
+    res = [0] * len(gen)
+    for b in data:
+        factor = b ^ res.pop(0)
+        res.append(0)
+        for i, c in enumerate(gen):
+            res[i] ^= _gf_mul(c, factor)
+    return res
+
+
+def make_qr(text, mask=None):
+    """Return the QR code as a list of rows of booleans (True = dark)."""
+    data = text.encode("utf-8")
+    for ver in range(1, 7):
+        ecl, nblocks = _QR_EC[ver]
+        data_cw = _QR_TOTAL[ver] - ecl * nblocks
+        if 12 + 8 * len(data) <= data_cw * 8:
+            break
+    else:
+        raise ValueError("text too long for this QR encoder")
+
+    bits = []
+
+    def put(val, n):
+        bits.extend((val >> i) & 1 for i in range(n - 1, -1, -1))
+
+    put(0b0100, 4)
+    put(len(data), 8)
+    for b in data:
+        put(b, 8)
+    cap = data_cw * 8
+    put(0, min(4, cap - len(bits)))
+    while len(bits) % 8:
+        bits.append(0)
+    pad = 0
+    while len(bits) < cap:
+        put((0xEC, 0x11)[pad % 2], 8)
+        pad += 1
+    codewords = [int("".join(map(str, bits[j:j + 8])), 2) for j in range(0, len(bits), 8)]
+
+    per = data_cw // nblocks
+    blocks = [codewords[i * per:(i + 1) * per] for i in range(nblocks)]
+    gen = _rs_generator(ecl)
+    ecs = [_rs_remainder(b, gen) for b in blocks]
+    final = [b[i] for i in range(per) for b in blocks] + [e[i] for i in range(ecl) for e in ecs]
+
+    size = ver * 4 + 17
+    mod = [[False] * size for _ in range(size)]
+    fn = [[False] * size for _ in range(size)]
+
+    def setfn(x, y, dark):
+        mod[y][x] = dark
+        fn[y][x] = True
+
+    for i in range(size):
+        setfn(6, i, i % 2 == 0)
+        setfn(i, 6, i % 2 == 0)
+    for cx, cy in ((3, 3), (size - 4, 3), (3, size - 4)):
+        for dy in range(-4, 5):
+            for dx in range(-4, 5):
+                x, y = cx + dx, cy + dy
+                if 0 <= x < size and 0 <= y < size:
+                    setfn(x, y, max(abs(dx), abs(dy)) not in (2, 4))
+    pos = _QR_ALIGN[ver]
+    for i, px in enumerate(pos):
+        for j, py in enumerate(pos):
+            if (i == 0 and j == 0) or (i == 0 and j == len(pos) - 1) or (i == len(pos) - 1 and j == 0):
+                continue
+            for dy in range(-2, 3):
+                for dx in range(-2, 3):
+                    setfn(px + dx, py + dy, max(abs(dx), abs(dy)) != 1)
+
+    def draw_format(m):
+        d = m  # error-correction level M has format bits 00
+        rem = d
+        for _ in range(10):
+            rem = (rem << 1) ^ ((rem >> 9) * 0x537)
+        fb = ((d << 10) | rem) ^ 0x5412
+
+        def bit(i):
+            return ((fb >> i) & 1) != 0
+
+        for i in range(0, 6):
+            setfn(8, i, bit(i))
+        setfn(8, 7, bit(6))
+        setfn(8, 8, bit(7))
+        setfn(7, 8, bit(8))
+        for i in range(9, 15):
+            setfn(14 - i, 8, bit(i))
+        for i in range(0, 8):
+            setfn(size - 1 - i, 8, bit(i))
+        for i in range(8, 15):
+            setfn(8, size - 15 + i, bit(i))
+        setfn(8, size - 8, True)
+
+    draw_format(0)  # reserve the format areas
+
+    i = 0
+    for right in range(size - 1, 0, -2):
+        if right <= 6:
+            right -= 1
+        for vert in range(size):
+            for j in range(2):
+                x = right - j
+                y = size - 1 - vert if ((right + 1) & 2) == 0 else vert
+                if not fn[y][x] and i < len(final) * 8:
+                    mod[y][x] = ((final[i >> 3] >> (7 - (i & 7))) & 1) != 0
+                    i += 1
+
+    def apply_mask(m):
+        f = _QR_MASKS[m]
+        for y in range(size):
+            for x in range(size):
+                if not fn[y][x] and f(x, y):
+                    mod[y][x] = not mod[y][x]
+
+    def penalty():
+        score = 0
+        lines = [row for row in mod] + [[mod[y][x] for y in range(size)] for x in range(size)]
+        for line in lines:  # runs of 5+ same-colour modules
+            run = 1
+            for k in range(1, size):
+                if line[k] == line[k - 1]:
+                    run += 1
+                else:
+                    if run >= 5:
+                        score += 3 + run - 5
+                    run = 1
+            if run >= 5:
+                score += 3 + run - 5
+        for line in lines:  # finder-like patterns (1:1:3:1:1 with 4 light modules beside it)
+            s = "".join("1" if c else "0" for c in line)
+            for pat in ("10111010000", "00001011101"):
+                k = s.find(pat)
+                while k != -1:
+                    score += 40
+                    k = s.find(pat, k + 1)
+        for y in range(size - 1):  # 2x2 blocks
+            for x in range(size - 1):
+                if mod[y][x] == mod[y][x + 1] == mod[y + 1][x] == mod[y + 1][x + 1]:
+                    score += 3
+        dark = sum(sum(row) for row in mod)
+        score += (abs(dark * 20 - size * size * 10) // (size * size)) * 10
+        return score
+
+    if mask is None:
+        best, best_score = 0, None
+        for m in range(8):
+            apply_mask(m)
+            draw_format(m)
+            s = penalty()
+            apply_mask(m)
+            if best_score is None or s < best_score:
+                best, best_score = m, s
+        mask = best
+    apply_mask(mask)
+    draw_format(mask)
+    return mod
+
+
+def qr_svg(text):
+    m = make_qr(text)
+    n, b = len(m), 4
+    path = "".join("M%d %dh1v1h-1z" % (x + b, y + b) for y in range(n) for x in range(n) if m[y][x])
+    return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" shape-rendering="crispEdges">'
+            '<rect width="100%%" height="100%%" fill="#fff"/><path d="%s" fill="#000"/></svg>'
+            % (n + 2 * b, n + 2 * b, path))
+
+
+# --------------------------------------------------------------------------
+# App icon (drawn in code so no image files are needed)
+# --------------------------------------------------------------------------
+_ICON_CACHE = {}
+
+
+def make_icon_png(size):
+    if size in _ICON_CACHE:
+        return _ICON_CACHE[size]
+    bg, body, wheel = (15, 17, 21), (79, 140, 255), (232, 234, 240)
+    S = float(size)
+
+    def cover(d):
+        return max(0.0, min(1.0, 0.5 - d * S))
+
+    def rrect(u, v, cx, cy, hx, hy, r):
+        qx, qy = abs(u - cx) - (hx - r), abs(v - cy) - (hy - r)
+        return math.hypot(max(qx, 0.0), max(qy, 0.0)) + min(max(qx, qy), 0.0) - r
+
+    def mix(c1, c2, t):
+        return tuple(c1[k] + (c2[k] - c1[k]) * t for k in range(3))
+
+    px = bytearray(size * size * 4)
+    n = 0
+    for y in range(size):
+        v = (y + 0.5) / S
+        for x in range(size):
+            u = (x + 0.5) / S
+            a = cover(rrect(u, v, 0.5, 0.5, 0.19, 0.29, 0.19))
+            col = mix(bg, body, a)
+            if a > 0:
+                lv = cover(abs(u - 0.5) - 0.008) if v < 0.47 else 0.0
+                lh = cover(abs(v - 0.47) - 0.008)
+                col = mix(col, bg, max(lv, lh) * a)
+                col = mix(col, wheel, cover(rrect(u, v, 0.5, 0.37, 0.022, 0.045, 0.022)) * a)
+            px[n] = int(col[2])
+            px[n + 1] = int(col[1])
+            px[n + 2] = int(col[0])
+            px[n + 3] = 255
+            n += 4
+    png = encode_png(size, size, bytes(px))
+    _ICON_CACHE[size] = png
+    return png
+
+
+# --------------------------------------------------------------------------
+# App data folder and "start with Windows"
+# --------------------------------------------------------------------------
+def data_dir():
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        d = os.path.join(appdata, "RemoteMouse")
+    elif getattr(sys, "frozen", False):
+        d = os.path.dirname(sys.executable)
+    else:
+        d = os.path.dirname(os.path.abspath(__file__))
+    try:
+        os.makedirs(d, exist_ok=True)
+    except OSError:
+        pass
+    return d
+
+
+STARTUP_FILE = "RemoteMouse.vbs"
+
+
+def startup_dir():
+    appdata = os.environ.get("APPDATA")
+    if not appdata:
+        return None
+    return os.path.join(appdata, "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
+
+
+def startup_command():
+    if getattr(sys, "frozen", False):
+        return '"%s" --no-browser' % sys.executable
+    exe = sys.executable
+    base, name = os.path.split(exe)
+    if name.lower() == "python.exe" and os.path.exists(os.path.join(base, "pythonw.exe")):
+        exe = os.path.join(base, "pythonw.exe")  # no console window
+    return '"%s" "%s" --no-browser' % (exe, os.path.abspath(__file__))
+
+
+def vbs_script(cmd):
+    return 'CreateObject("WScript.Shell").Run "%s", 0, False\r\n' % cmd.replace('"', '""')
+
+
+def startup_enabled(folder=None):
+    folder = folder or startup_dir()
+    return bool(folder) and os.path.exists(os.path.join(folder, STARTUP_FILE))
+
+
+def set_startup(enabled, folder=None):
+    folder = folder or startup_dir()
+    if not folder:
+        raise OSError("Windows startup folder not found")
+    path = os.path.join(folder, STARTUP_FILE)
+    if enabled:
+        os.makedirs(folder, exist_ok=True)
+        with open(path, "w", encoding="utf-16", newline="") as f:  # UTF-16 with BOM: safe for any user name
+            f.write(vbs_script(startup_command()))
+    else:
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
 
 
 # --------------------------------------------------------------------------
@@ -526,7 +843,14 @@ INDEX_HTML = r"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#0f1115">
-<title>Remote Mouse</title>
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="__PCNAME__">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<title>__PCNAME__</title>
 <style>
   :root { --bg:#0f1115; --panel:#181b22; --panel2:#222733; --text:#e8eaf0; --muted:#8b93a7; --accent:#4f8cff; --ok:#3ddc84; --bad:#ff5d5d; --warn:#c0392b; }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; -webkit-touch-callout:none; user-select:none; -webkit-user-select:none; }
@@ -737,6 +1061,7 @@ INDEX_HTML = r"""<!doctype html>
 
 <script>
 (function () {
+  var PC = __PCNAME_JSON__;
   var $ = function (id) { return document.getElementById(id); };
   var each = function (list, fn) { Array.prototype.forEach.call(list, fn); };
   var store = {
@@ -751,7 +1076,7 @@ INDEX_HTML = r"""<!doctype html>
   var blockedUntil = 0;
   function blocked() { return Date.now() < blockedUntil; }
   function askPin() {
-    var p = prompt('Enter the PIN shown on your PC');
+    var p = prompt('Enter the PIN for ' + PC + ' (shown on the PC at http://localhost:' + location.port + '/pair)');
     if (p) { pin = p.trim(); }
     blockedUntil = 0;
     ping();
@@ -763,7 +1088,7 @@ INDEX_HTML = r"""<!doctype html>
     $('status').textContent = text;
   }
   $('hdr').addEventListener('click', askPin);
-  function offline() { setStatus(false, 'Offline - is the PC server running?'); }
+  function offline() { setStatus(false, 'Can\'t reach ' + PC + ' - same Wi-Fi? Is Remote Mouse running?'); }
 
   function api(path, opts) {
     opts = opts || {};
@@ -773,7 +1098,7 @@ INDEX_HTML = r"""<!doctype html>
   function authOk(r) {
     if (r.status === 403) { blockedUntil = Infinity; setStatus(false, 'Wrong PIN - tap here to enter it'); return false; }
     if (r.status === 429) { blockedUntil = Date.now() + 60000; setStatus(false, 'Too many wrong PINs - wait 1 minute'); return false; }
-    if (r.ok) { store.set('rm_pin', pin); setStatus(true, 'Connected'); return true; }
+    if (r.ok) { store.set('rm_pin', pin); setStatus(true, 'Connected to ' + PC); return true; }
     return false;
   }
 
@@ -1073,6 +1398,129 @@ INDEX_HTML = r"""<!doctype html>
 
 
 # --------------------------------------------------------------------------
+# PC "Pair" page (only reachable from the PC itself)
+# --------------------------------------------------------------------------
+PAIR_HTML = r"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Remote Mouse - __NAME__</title>
+<link rel="icon" href="/icon-192.png">
+<style>
+  :root { color-scheme: dark light; --bg:#0f1115; --panel:#181b22; --text:#e8eaf0; --muted:#8b93a7; --accent:#4f8cff; --ok:#3ddc84; }
+  @media (prefers-color-scheme: light) { :root { --bg:#f3f5f9; --panel:#ffffff; --text:#1b2030; --muted:#5d667a; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.45 system-ui,"Segoe UI",Roboto,sans-serif; display:flex; justify-content:center; padding:32px 16px; }
+  main { width:100%; max-width:760px; }
+  h1 { font-size:26px; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 24px; }
+  .ok { color:var(--ok); font-weight:600; }
+  .card { background:var(--panel); border-radius:18px; padding:24px; display:flex; gap:28px; flex-wrap:wrap; align-items:center; }
+  .qr { width:240px; height:240px; flex:none; border-radius:12px; overflow:hidden; background:#fff; }
+  .qr svg { width:100%; height:100%; display:block; }
+  ol { margin:0; padding-left:20px; flex:1; min-width:240px; }
+  li { margin:0 0 10px; }
+  code { background:rgba(127,127,127,.18); padding:2px 7px; border-radius:6px; font-size:15px; word-break:break-all; }
+  .pin { font-size:34px; letter-spacing:6px; font-weight:700; margin:20px 0 4px; }
+  .warn { background:#4a2c12; color:#ffd7a8; border-radius:12px; padding:12px 16px; margin-bottom:16px; }
+  .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-top:22px; }
+  label.sw { display:flex; align-items:center; gap:10px; cursor:pointer; }
+  button { border:0; border-radius:12px; padding:11px 18px; font:inherit; font-weight:600; background:#3a2226; color:#ffb4b4; cursor:pointer; }
+  .hint { color:var(--muted); font-size:14px; margin-top:14px; }
+  .hidden { display:none; }
+  #msg { color:var(--muted); font-size:14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Remote Mouse</h1>
+  <p class="sub"><span class="ok">&#9679; Running</span> on <b>__NAME__</b></p>
+  __WARN__
+  <div class="card">
+    <div class="qr">__QR__</div>
+    <ol>
+      <li>Connect your phone to the <b>same Wi-Fi</b> as this PC.</li>
+      <li>Scan this code with your phone's camera and open the link.</li>
+      <li>Add it to your home screen:<br>
+        <span class="hint">Android Chrome: &#8942; menu &rarr; <i>Add to Home screen</i><br>iPhone Safari: Share &rarr; <i>Add to Home Screen</i></span></li>
+    </ol>
+  </div>
+  <div class="pin">__PIN__</div>
+  <div class="hint">PIN (the phone asks for it once if it is not in the link)</div>
+  <div class="hint">Link: <code>__URL__</code></div>
+  __ALT__
+  <div class="row __WINDOWS__">
+    <label class="sw"><input type="checkbox" id="auto" __AUTOSTART__> Start Remote Mouse when Windows starts</label>
+    <span id="msg"></span>
+  </div>
+  <div class="row"><button id="quit">Stop Remote Mouse</button></div>
+  <div class="hint">If your router gives the PC a new address later, open this page again and scan the new code.</div>
+</main>
+<script>
+(function () {
+  var msg = document.getElementById('msg');
+  function admin(path, body) {
+    return fetch(path, { method: 'POST', headers: { 'X-Admin': '1', 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+  }
+  var auto = document.getElementById('auto');
+  if (auto) auto.addEventListener('change', function () {
+    var want = auto.checked;
+    admin('/autostart', { on: want }).then(function (r) { return r.json(); }).then(function (j) {
+      if (!j.ok) throw new Error(j.error || 'failed');
+      msg.textContent = want ? 'Will start with Windows.' : 'Turned off.';
+    }).catch(function (e) { auto.checked = !want; msg.textContent = 'Could not change: ' + e.message; });
+  });
+  document.getElementById('quit').addEventListener('click', function () {
+    if (!confirm('Stop Remote Mouse? Your phone will lose control until you start it again.')) return;
+    admin('/quit').then(function () { document.body.innerHTML = '<main><h1>Remote Mouse stopped</h1><p class="sub">You can close this tab.</p></main>'; });
+  });
+})();
+</script>
+</body>
+</html>
+"""
+
+
+class AppInfo:
+    def __init__(self, name, pin, port, ips, windows):
+        self.name, self.pin, self.port, self.ips, self.windows = name, pin, port, ips, windows
+
+    def phone_url(self):
+        return "http://%s:%d/?pin=%s" % (self.ips[0], self.port, self.pin)
+
+    def name_url(self):
+        n = self.name
+        if n and all(c.isalnum() or c == "-" for c in n) and n.isascii():
+            return "http://%s.local:%d/" % (n, self.port)
+        return None
+
+    def pair_url(self):
+        return "http://localhost:%d/pair" % self.port
+
+
+def render_pair_page(info):
+    esc = htmllib.escape
+    warn = ""
+    if info.ips[0].startswith("127."):
+        warn = '<div class="warn">No Wi-Fi / network address found. Connect this PC to your Wi-Fi, then restart Remote Mouse.</div>'
+    alt = []
+    for ip in info.ips[1:]:
+        alt.append('<div class="hint">Other address: <code>http://%s:%d/</code></div>' % (esc(ip), info.port))
+    nu = info.name_url()
+    if nu:
+        alt.append('<div class="hint">By name (works on many phones, and survives address changes): <code>%s</code></div>' % esc(nu))
+    page = PAIR_HTML
+    for key, val in (("__NAME__", esc(info.name)), ("__QR__", qr_svg(info.phone_url())),
+                     ("__PIN__", esc(info.pin)), ("__URL__", esc("http://%s:%d/" % (info.ips[0], info.port))),
+                     ("__ALT__", "".join(alt)), ("__WARN__", warn),
+                     ("__WINDOWS__", "" if info.windows else "hidden"),
+                     ("__AUTOSTART__", "checked" if startup_enabled() else "")):
+        page = page.replace(key, val)
+    return page.encode("utf-8")
+
+
+# --------------------------------------------------------------------------
 # HTTP server
 # --------------------------------------------------------------------------
 class Auth:
@@ -1100,7 +1548,21 @@ class Auth:
             return "bad"
 
 
-def make_handler(controller, auth):
+def make_handler(controller, auth, info):
+    index_html = (INDEX_HTML
+                  .replace("__PCNAME_JSON__", json.dumps(info.name).replace("<", "\\u003c"))
+                  .replace("__PCNAME__", htmllib.escape(info.name))).encode("utf-8")
+    manifest = json.dumps({
+        "name": "Remote Mouse - " + info.name,
+        "short_name": info.name[:12] or "Remote Mouse",
+        "description": "Use your phone as a mouse, keyboard and screen for " + info.name,
+        "start_url": "/", "scope": "/", "display": "standalone", "orientation": "any",
+        "background_color": "#0f1115", "theme_color": "#0f1115",
+        "icons": [{"src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+                  {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}],
+    }).encode("utf-8")
+    icons = {"/icon-192.png": 192, "/icon-512.png": 512, "/apple-touch-icon.png": 180}
+
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
@@ -1129,11 +1591,26 @@ def make_handler(controller, auth):
                 self._send(403, b"bad pin")
             return False
 
+        def _is_local_admin(self):
+            """Request comes from this PC *and* was addressed to localhost (blocks DNS-rebinding tricks)."""
+            host = (self.headers.get("Host", "") or "").split(":")[0].lower()
+            return self.client_address[0].startswith("127.") and host in ("localhost", "127.0.0.1")
+
         def do_GET(self):
             url = urlparse(self.path)
-            if url.path in ("/", "/index.html"):
-                self._send(200, INDEX_HTML.encode("utf-8"), "text/html; charset=utf-8")
-            elif url.path == "/screen.png":
+            path = url.path
+            if path in ("/", "/index.html"):
+                self._send(200, index_html, "text/html; charset=utf-8")
+            elif path == "/manifest.webmanifest":
+                self._send(200, manifest, "application/manifest+json")
+            elif path in icons:
+                self._send(200, make_icon_png(icons[path]), "image/png")
+            elif path == "/pair":
+                if not self._is_local_admin():
+                    self._send(403, b"open this page on the PC itself: " + info.pair_url().encode())
+                    return
+                self._send(200, render_pair_page(info), "text/html; charset=utf-8")
+            elif path == "/screen.png":
                 if not self._authorized():
                     return
                 try:
@@ -1147,7 +1624,7 @@ def make_handler(controller, auth):
                     self._send(500, b"capture failed")
                     return
                 self._send(200, png, "image/png", {"X-Cursor": "%.5f,%.5f" % (fx, fy)})
-            elif url.path == "/clip":
+            elif path == "/clip":
                 if not self._authorized():
                     return
                 try:
@@ -1159,32 +1636,56 @@ def make_handler(controller, auth):
             else:
                 self._send(404, b"not found")
 
-        def do_POST(self):
-            if self.path.split("?", 1)[0] != "/cmd":
-                self._send(404, b"not found")
-                return
+        def _read_body(self, limit):
             try:
                 length = int(self.headers.get("Content-Length", "0"))
             except ValueError:
                 length = 0
-            if length < 0 or length > 65536:
+            if length < 0 or length > limit:
                 self.close_connection = True  # body is not read, so don't reuse the connection
                 self._send(413, b"too large")
-                return
-            raw = self.rfile.read(length) if length else b""
-            if not self._authorized():
-                return
-            try:
-                data = json.loads(raw.decode("utf-8")) if raw else {}
-                cmds = data.get("cmds", [])
-                if not isinstance(cmds, list):
-                    raise ValueError("cmds must be a list")
-                cmds = [c for c in cmds[:200] if isinstance(c, dict)]
-            except (ValueError, UnicodeDecodeError, AttributeError):
-                self._send(400, b"bad request")
-                return
-            controller.handle_batch(cmds)
-            self._send(200, b'{"ok":true}', "application/json")
+                return None
+            return self.rfile.read(length) if length else b""
+
+        def do_POST(self):
+            path = self.path.split("?", 1)[0]
+            if path == "/cmd":
+                raw = self._read_body(65536)
+                if raw is None or not self._authorized():
+                    return
+                try:
+                    data = json.loads(raw.decode("utf-8")) if raw else {}
+                    cmds = data.get("cmds", [])
+                    if not isinstance(cmds, list):
+                        raise ValueError("cmds must be a list")
+                    cmds = [c for c in cmds[:200] if isinstance(c, dict)]
+                except (ValueError, UnicodeDecodeError, AttributeError):
+                    self._send(400, b"bad request")
+                    return
+                controller.handle_batch(cmds)
+                self._send(200, b'{"ok":true}', "application/json")
+            elif path in ("/quit", "/autostart"):
+                raw = self._read_body(1024)
+                if raw is None:
+                    return
+                # custom header = cross-site pages cannot send this without a CORS preflight
+                if not self._is_local_admin() or self.headers.get("X-Admin") != "1":
+                    self._send(403, b"forbidden")
+                    return
+                if path == "/quit":
+                    self._send(200, b'{"ok":true}', "application/json")
+                    threading.Thread(target=self.server.shutdown, daemon=True).start()
+                    return
+                try:
+                    on = bool(json.loads(raw.decode("utf-8") or "{}").get("on"))
+                    if not info.windows:
+                        raise OSError("only available on Windows")
+                    set_startup(on)
+                    self._send(200, json.dumps({"ok": True, "on": on}).encode(), "application/json")
+                except (OSError, ValueError, AttributeError) as e:
+                    self._send(200, json.dumps({"ok": False, "error": str(e)}).encode(), "application/json")
+            else:
+                self._send(404, b"not found")
 
     return Handler
 
@@ -1217,7 +1718,7 @@ def local_ips():
 def load_or_make_pin(explicit):
     if explicit:
         return explicit
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "remote_mouse_pin.txt")
+    path = os.path.join(data_dir(), "remote_mouse_pin.txt")
     try:
         with open(path, "r", encoding="ascii") as f:
             saved = f.read().strip()
@@ -1239,34 +1740,71 @@ def main():
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--pin", default=None, help="fixed PIN (default: random 6 digits, saved for next time)")
+    ap.add_argument("--name", default=None, help="name shown on the phone (default: this PC's name)")
+    ap.add_argument("--no-browser", action="store_true", help="don't open the pairing page on the PC")
+    ap.add_argument("--install-startup", action="store_true", help="start Remote Mouse automatically with Windows")
+    ap.add_argument("--remove-startup", action="store_true", help="stop starting with Windows")
     ap.add_argument("--dry-run", action="store_true", help="print commands instead of controlling the PC")
     args = ap.parse_args()
 
+    if sys.stdout is None or sys.stderr is None:  # started without a console (pythonw / windowed exe)
+        try:
+            sys.stdout = sys.stderr = open(os.path.join(data_dir(), "remote_mouse.log"), "a",
+                                           encoding="utf-8", buffering=1)
+        except OSError:
+            pass
+
+    if args.install_startup or args.remove_startup:
+        try:
+            set_startup(args.install_startup)
+            print("Remote Mouse will now start with Windows." if args.install_startup
+                  else "Remote Mouse will no longer start with Windows.")
+        except OSError as e:
+            print("Could not change startup setting:", e)
+            sys.exit(1)
+        return
+
+    windows = platform.system() == "Windows"
     if args.dry_run:
         controller = DryRunController()
-    elif platform.system() == "Windows":
+    elif windows:
         controller = WindowsController()
     else:
         print("This server controls a Windows PC. Use --dry-run to test on other systems.")
         sys.exit(1)
 
     pin = load_or_make_pin(args.pin)
-    server = Server((args.host, args.port), make_handler(controller, Auth(pin)))
+    info = AppInfo(args.name or socket.gethostname() or "PC", pin, args.port, local_ips(), windows)
+    try:
+        server = Server((args.host, args.port), make_handler(controller, Auth(pin), info))
+    except OSError as e:
+        print(f"Could not start on port {args.port}: {e}")
+        print("Remote Mouse may already be running - opening its pairing page instead.")
+        if not args.no_browser and not args.dry_run:
+            webbrowser.open(info.pair_url())
+        sys.exit(1)
 
-    ips = local_ips()
     print("=" * 60)
-    print(" Remote Mouse is running")
+    print(f" Remote Mouse is running on {info.name}")
     print()
-    print(" Open this on your phone (phone and PC on the same Wi-Fi):")
-    print(f"   http://{ips[0]}:{args.port}/?pin={pin}")
-    for ip in ips[1:]:
-        print(f"   (or) http://{ip}:{args.port}/?pin={pin}")
-    print()
+    print(" Phone and PC must be on the same Wi-Fi.")
+    print(f" On this PC, open:  {info.pair_url()}   (QR code to scan)")
+    print(f" Or type on the phone:  http://{info.ips[0]}:{args.port}/")
+    for ip in info.ips[1:]:
+        print(f"   (or) http://{ip}:{args.port}/")
+    nu = info.name_url()
+    if nu:
+        print(f"   (or by name) {nu}")
     print(f" PIN: {pin}")
     print(" Press Ctrl+C to stop.")
     print("=" * 60)
-    print("If it does not load, allow Python through Windows Firewall (Private networks),")
-    print("and make sure your Wi-Fi is set to the 'Private' network profile.")
+    print("If the phone cannot connect: allow Python/RemoteMouse through Windows Firewall")
+    print("(Private networks) and set your Wi-Fi to the 'Private' network profile.")
+    if not args.no_browser and not args.dry_run:
+        try:
+            webbrowser.open(info.pair_url())
+        except Exception:
+            pass
     try:
         server.serve_forever()
     except KeyboardInterrupt:
