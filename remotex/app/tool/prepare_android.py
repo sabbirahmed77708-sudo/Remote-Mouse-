@@ -34,6 +34,12 @@ def create():
                            "--project-name", "remotex", "--no-pub", "."], cwd=APP)
 
 
+def drop_template_test():
+    p = os.path.join(APP, "test", "widget_test.dart")  # made by flutter create, refers to a class we do not have
+    if os.path.exists(p):
+        os.remove(p)
+
+
 def patch_gradle():
     for name in ("build.gradle.kts", "build.gradle"):
         p = os.path.join(ANDROID, "app", name)
@@ -95,6 +101,7 @@ def icons():
 
 if __name__ == "__main__":
     create()
+    drop_template_test()
     patch_gradle()
     patch_manifest()
     icons()

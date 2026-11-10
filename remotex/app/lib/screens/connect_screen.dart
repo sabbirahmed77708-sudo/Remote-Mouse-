@@ -220,7 +220,7 @@ class _QrTabState extends State<_QrTab> {
               child: MobileScanner(
                 controller: _camera,
                 onDetect: _onDetect,
-                errorBuilder: (context, error) => Center(
+                errorBuilder: (context, error, _) => Center(
                   child: Padding(
                     padding: const EdgeInsets.all(24),
                     child: Column(
