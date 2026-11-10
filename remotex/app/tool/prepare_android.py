@@ -40,6 +40,32 @@ def drop_template_test():
         os.remove(p)
 
 
+def patch_signing():
+    """Release builds use the committed keystore when RX_KEYSTORE is set, so updates install over old versions."""
+    p = os.path.join(ANDROID, "app", "build.gradle.kts")
+    if not os.path.exists(p):
+        sys.exit("signing patch needs app/build.gradle.kts (Kotlin DSL)")
+    s = read(p)
+    if "\"rx\"" in s:
+        return
+    old = 'signingConfig = signingConfigs.getByName("debug")'
+    if old not in s or "buildTypes {" not in s:
+        sys.exit("unexpected build.gradle.kts layout; cannot add signing")
+    block = (
+        "    signingConfigs {\n"
+        '        create("rx") {\n'
+        '            storeFile = System.getenv("RX_KEYSTORE")?.let { file(it) }\n'
+        '            storePassword = System.getenv("RX_STORE_PASS")\n'
+        '            keyAlias = System.getenv("RX_KEY_ALIAS")\n'
+        '            keyPassword = System.getenv("RX_KEY_PASS")\n'
+        "        }\n"
+        "    }\n\n"
+    )
+    s = s.replace("    buildTypes {", block + "    buildTypes {", 1)
+    s = s.replace(old, 'signingConfig = if (System.getenv("RX_KEYSTORE") != null) signingConfigs.getByName("rx") else signingConfigs.getByName("debug")', 1)
+    write(p, s)
+
+
 def patch_gradle():
     for name in ("build.gradle.kts", "build.gradle"):
         p = os.path.join(ANDROID, "app", name)
@@ -47,8 +73,8 @@ def patch_gradle():
             continue
         s = read(p)
         n = re.sub(r"minSdk(Version)?(\s*=\s*|\s+)flutter\.minSdkVersion",
-                   lambda m: "minSdk" + ("Version" if m.group(1) else "") + m.group(2) + "29", s)
-        if n == s and not re.search(r"minSdk(Version)?\s*=?\s*29", s):
+                   lambda m: "minSdk" + ("Version" if m.group(1) else "") + m.group(2) + "24", s)
+        if n == s and not re.search(r"minSdk(Version)?\s*=?\s*24", s):
             sys.exit("could not set minSdk in " + p)
         write(p, n)
         return
@@ -79,14 +105,20 @@ def icons():
     write(os.path.join(RES, "drawable", "ic_launcher_foreground.xml"),
           '''<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#4F8CFF"
-        android:pathData="M54,26 C45,26 38,33 38,42 L38,66 C38,75 45,82 54,82 C63,82 70,75 70,66 L70,42 C70,33 63,26 54,26 Z"/>
-    <path android:fillColor="#0F1115"
-        android:pathData="M52.5,30 L55.5,30 L55.5,50 L52.5,50 Z"/>
-    <path android:fillColor="#0F1115"
-        android:pathData="M38,50 L70,50 L70,52.5 L38,52.5 Z"/>
+    <group android:pivotX="54" android:pivotY="54" android:rotation="45">
+        <path android:pathData="M43,32 L65,32 A11,11 0 0 1 76,43 L76,65 A11,11 0 0 1 65,76 L43,76 A11,11 0 0 1 32,65 L32,43 A11,11 0 0 1 43,32 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient android:type="linear" android:startX="32" android:startY="32"
+                    android:endX="76" android:endY="76"
+                    android:startColor="#4F8CFF" android:endColor="#965AFF"/>
+            </aapt:attr>
+        </path>
+    </group>
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M45,41 L45,67 L51,61.5 L55,70 L59,68 L55,59.5 L63,59.5 Z"/>
 </vector>
 ''')
     xml = ('<?xml version="1.0" encoding="utf-8"?>\n'
@@ -103,6 +135,7 @@ if __name__ == "__main__":
     create()
     drop_template_test()
     patch_gradle()
+    patch_signing()
     patch_manifest()
     icons()
-    print("android/ is ready (minSdk 29, INTERNET + CAMERA + VIBRATE, RemoteX icon)")
+    print("android/ is ready (minSdk 24, INTERNET + CAMERA + VIBRATE, RemoteX icon)")

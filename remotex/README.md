@@ -2,13 +2,13 @@
 
 Use an Android phone as a mouse, keyboard and media remote for a Windows PC over the same Wi-Fi.
 
-- `app/` – Flutter (Material 3) Android app, Android 10+ (minSdk 29)
+- `app/` – Flutter (Material 3) Android app, Android 7+ (minSdk 24)
 - `server/` – Windows server (Python, TLS WebSocket, small window with QR code), Windows 10/11
 - `docs/PROTOCOL.md` – the wire protocol; `protocol/test_vectors.json` – vectors both sides are tested against
 
 ## Get the apps (no build tools needed)
 GitHub → **Actions** tab → open the latest green run of
-- **RemoteX app (analyze, test, APK)** → artifact `RemoteX-apk` → `app-release.apk`
+- **RemoteX app (analyze, test, APK)** → artifact `RemoteX-apk` → `RemoteX-arm64.apk` (almost every phone; `arm32` for very old phones, `x86_64` for emulators)
 - **RemoteX server (tests + Windows EXE)** → artifact `RemoteXServer-windows` → `RemoteXServer.exe`
 
 (Artifacts are zip files; unzip first. Push a tag `remotex-v1.0.0` to also get them attached to a GitHub Release.)
@@ -34,7 +34,7 @@ Touchpad (move, tap = left click, two-finger tap = right click, two-finger scrol
 ## Build yourself
 Server (Windows, Python 3.10+): `cd server` then `build_exe.bat` → `dist\RemoteXServer.exe`.
 Run from source: `pip install -r requirements.txt` then `python run_server.py`.
-App: install Flutter, then `cd app`, `python tool/prepare_android.py` (creates `android/`, sets minSdk 29, permissions INTERNET/CAMERA/VIBRATE, icon), `flutter pub get`, `flutter build apk --release`.
+App: install Flutter, then `cd app`, `python tool/prepare_android.py` (creates `android/`, sets minSdk 24, permissions INTERNET/CAMERA/VIBRATE, icon), `flutter pub get`, `flutter build apk --release --split-per-abi`.
 
 ## What has actually been tested
 Verified automatically on GitHub Actions (see the workflow runs):

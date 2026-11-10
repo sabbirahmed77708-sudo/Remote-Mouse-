@@ -4,6 +4,7 @@ import '../app_scope.dart';
 import '../models/saved_pc.dart';
 import '../services/connection_controller.dart';
 import '../widgets/common.dart';
+import '../widgets/logo.dart';
 
 /// Dashboard: connection card, quick actions and saved PCs.
 class HomeScreen extends StatelessWidget {
@@ -24,18 +25,7 @@ class HomeScreen extends StatelessWidget {
           children: [
             Row(
               children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: [
-                      Theme.of(context).colorScheme.primary,
-                      Theme.of(context).colorScheme.tertiary,
-                    ]),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(Icons.mouse_rounded, color: Theme.of(context).colorScheme.onPrimary),
-                ),
+                const LogoMark(size: 48),
                 const SizedBox(width: 12),
                 Text('RemoteX', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
               ],
