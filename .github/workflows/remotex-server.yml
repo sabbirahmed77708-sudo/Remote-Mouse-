@@ -55,12 +55,36 @@ jobs:
           if (-not $ssl.IsAuthenticated) { throw "TLS failed" }
           Write-Host "TLS handshake OK with the EXE"
           Stop-Process -Id $p.Id -Force
+      - name: Build the installer (Inno Setup)
+        working-directory: remotex/server
+        shell: cmd
+        run: |
+          where iscc || choco install innosetup -y --no-progress
+          iscc installer.iss || "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" installer.iss
+      - name: Silent install test (installs, checks files + firewall rule, uninstalls)
+        working-directory: remotex/server
+        shell: pwsh
+        run: |
+          Start-Process dist\RemoteX-Server-Setup.exe -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/TASKS=desktopicon" -Wait
+          $exe = "$env:ProgramFiles\RemoteX Server\RemoteXServer.exe"
+          if (-not (Test-Path $exe)) { throw "not installed" }
+          netsh advfirewall firewall show rule name="RemoteX Server" | Out-String | Write-Host
+          Get-Process RemoteXServer -ErrorAction SilentlyContinue | Stop-Process -Force
+          $u = Get-ChildItem "$env:ProgramFiles\RemoteX Server" -Filter unins*.exe | Select-Object -First 1
+          Start-Process $u.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES" -Wait
+          Start-Sleep 2
+          if (Test-Path $exe) { throw "uninstall left files" }
+          Write-Host "install + uninstall OK"
       - uses: actions/upload-artifact@v4
         with:
           name: RemoteXServer-windows
-          path: remotex/server/dist/RemoteXServer.exe
+          path: |
+            remotex/server/dist/RemoteXServer.exe
+            remotex/server/dist/RemoteX-Server-Setup.exe
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/remotex-v')
         uses: softprops/action-gh-release@v2
         with:
-          files: remotex/server/dist/RemoteXServer.exe
+          files: |
+            remotex/server/dist/RemoteXServer.exe
+            remotex/server/dist/RemoteX-Server-Setup.exe
