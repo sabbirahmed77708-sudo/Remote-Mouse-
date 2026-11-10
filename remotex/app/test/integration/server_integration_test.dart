@@ -148,8 +148,8 @@ void main() {
     await waitFor((e) => e['event'] == 'input' && e['op'] == 'key' && e['k'] == 'enter');
     await waitFor((e) => e['event'] == 'input' && e['op'] == 'combo' && (e['k'] as List).join('+') == 'ctrl+c');
     await waitFor((e) => e['event'] == 'input' && e['op'] == 'media' && e['k'] == 'playpause');
-    await sub.cancel();
     await c.close();
+    await sub.cancel().timeout(const Duration(seconds: 2), onTimeout: () {});
   });
 
   test('reconnect with the stored key (auth) and ping/pong', () async {
@@ -166,8 +166,8 @@ void main() {
     });
     c.send({'t': 'ping', 'ts': 1});
     await pong.future.timeout(const Duration(seconds: 5));
-    await sub.cancel();
     await c.close();
+    await sub.cancel().timeout(const Duration(seconds: 2), onTimeout: () {});
   });
 
   test('auth with a wrong key is refused', () async {

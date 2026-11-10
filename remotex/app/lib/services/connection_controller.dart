@@ -297,12 +297,18 @@ class ConnectionController extends ChangeNotifier {
     final conn = _conn;
     _conn = null;
     latencyMs = null;
-    await sub?.cancel();
+    // Close the socket first: cancelling an async* stream that is waiting for the
+    // next frame would otherwise wait for that frame.
     if (conn != null) {
       try {
         conn.send({'t': 'bye'});
       } catch (_) {}
       await conn.close();
+    }
+    if (sub != null) {
+      try {
+        await sub.cancel().timeout(const Duration(seconds: 1));
+      } catch (_) {}
     }
   }
 
