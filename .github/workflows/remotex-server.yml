@@ -1,0 +1,66 @@
+name: RemoteX server (tests + Windows EXE)
+
+on:
+  workflow_dispatch:
+  push:
+    paths: ["remotex/server/**", "remotex/protocol/**", ".github/workflows/remotex-server.yml"]
+    tags: ["remotex-v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: python -m pip install -r remotex/server/requirements.txt
+      - name: Unit tests (45)
+        working-directory: remotex/server
+        run: python -m unittest discover -s tests -v
+
+  exe:
+    runs-on: windows-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: python -m pip install -r remotex/server/requirements.txt pyinstaller
+      - name: Run the tests on Windows too
+        working-directory: remotex/server
+        run: python -m unittest discover -s tests
+      - name: Build RemoteXServer.exe
+        working-directory: remotex/server
+        shell: cmd
+        run: build_exe.bat
+      - name: GUI self-test (opens the real window, closes it)
+        working-directory: remotex/server
+        shell: pwsh
+        run: |
+          $p = Start-Process dist\RemoteXServer.exe -ArgumentList "--gui-selftest","3000","--data-dir","$env:RUNNER_TEMP\rx-gui","--port","48866" -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "GUI self-test exit code $($p.ExitCode)" }
+      - name: Smoke test the EXE (TLS port answers, hello is sent)
+        working-directory: remotex/server
+        shell: pwsh
+        run: |
+          $dir = "$env:RUNNER_TEMP\rx-smoke"
+          $p = Start-Process dist\RemoteXServer.exe -ArgumentList "--headless","--dry-run-input","--data-dir",$dir,"--port","48867" -PassThru
+          Start-Sleep -Seconds 8
+          $c = New-Object System.Net.Sockets.TcpClient("127.0.0.1",48867)
+          $ssl = New-Object System.Net.Security.SslStream($c.GetStream(), $false, ({$true}))
+          $ssl.AuthenticateAsClient("localhost")
+          if (-not $ssl.IsAuthenticated) { throw "TLS failed" }
+          Write-Host "TLS handshake OK with the EXE"
+          Stop-Process -Id $p.Id -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RemoteXServer-windows
+          path: remotex/server/dist/RemoteXServer.exe
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/remotex-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: remotex/server/dist/RemoteXServer.exe

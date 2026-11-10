@@ -1,0 +1,16 @@
+{
+  "_comment": "Shared by server/tests/test_protocol.py and app/test/protocol_test.dart. Regenerate with: python server/tests/make_vectors.py",
+  "fingerprint": "abababababababababababababababababababababababababababababababab",
+  "server_nonce": "00112233445566778899aabbccddeeff",
+  "client_nonce": "ffeeddccbbaa99887766554433221100",
+  "device_id": "0123456789abcdef0123456789abcdef",
+  "device_key": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+  "code_as_typed": "abcd-efgh jkmn",
+  "code_normalized": "ABCDEFGHJKMN",
+  "code_lookalikes_typed": "o1il-0000-0000",
+  "code_lookalikes_normalized": "011100000000",
+  "pair_proof": "5ca03b6316c161e5b3e6945eb476caba1a9f533877857ff4ffba08d5b162172c",
+  "server_proof": "f0df2efa261cc7428d927e34b7f5414277763e5f901a8b3a7a1098293d29a52c",
+  "auth_proof": "a49929e06eae482bd42c2148659d29c5c8d1ac7e0c36410abd02ddf4eb075d64",
+  "fingerprint_b64": "q6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6s"
+}

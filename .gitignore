@@ -1,2 +1,7 @@
 remote_mouse_pin.txt
 __pycache__/
+__pycache__/
+*.pyc
+remotex/server/dist/
+remotex/server/build/
+*.spec

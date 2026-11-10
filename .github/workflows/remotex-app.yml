@@ -1,0 +1,59 @@
+name: RemoteX app (analyze, test, APK)
+
+on:
+  workflow_dispatch:
+  push:
+    paths: ["remotex/app/**", "remotex/server/**", "remotex/protocol/**", ".github/workflows/remotex-app.yml"]
+    tags: ["remotex-v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  flutter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17" }
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: python -m pip install -r remotex/server/requirements.txt
+      - run: flutter --version
+      - name: Prepare Android project
+        working-directory: remotex/app
+        run: python tool/prepare_android.py
+      - name: flutter pub get
+        working-directory: remotex/app
+        run: flutter pub get
+      - name: flutter analyze
+        working-directory: remotex/app
+        run: flutter analyze --no-fatal-infos
+      - name: Dart unit tests (shared protocol vectors)
+        working-directory: remotex/app
+        run: flutter test test/protocol_test.dart
+      - name: Dart client vs real Python server
+        working-directory: remotex/app
+        env:
+          REMOTEX_SERVER_CMD: python ../server/run_server.py
+        run: flutter test test/integration/server_integration_test.dart
+      - name: Build release APK
+        working-directory: remotex/app
+        run: flutter build apk --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RemoteX-apk
+          path: remotex/app/build/app/outputs/flutter-apk/app-release.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-scaffold
+          path: remotex/app/android
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/remotex-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: remotex/app/build/app/outputs/flutter-apk/app-release.apk
