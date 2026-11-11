@@ -2,6 +2,11 @@ name: RemoteX server (tests + Windows EXE)
 
 on:
   workflow_dispatch:
+    inputs:
+      release:
+        description: "Publish a GitHub Release (tag remotex-v<version>) with the files"
+        type: boolean
+        default: false
   push:
     paths: ["remotex/server/**", "remotex/protocol/**", ".github/workflows/remotex-server.yml"]
     tags: ["remotex-v*"]
@@ -81,10 +86,17 @@ jobs:
           path: |
             remotex/server/dist/RemoteXServer.exe
             remotex/server/dist/RemoteX-Server-Setup.exe
+      - name: Release tag name
+        id: rel
+        shell: bash
+        run: echo "tag=remotex-v$(grep -oP '__version__ = \"\K[^\"]+' remotex/server/remotex_server/__init__.py)" >> "$GITHUB_OUTPUT"
       - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/remotex-v')
+        if: startsWith(github.ref, 'refs/tags/remotex-v') || inputs.release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.rel.outputs.tag }}
+          name: RemoteX ${{ steps.rel.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           files: |
             remotex/server/dist/RemoteXServer.exe
             remotex/server/dist/RemoteX-Server-Setup.exe
