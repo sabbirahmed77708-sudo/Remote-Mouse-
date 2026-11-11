@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 /// Version of this build. Keep in sync with `version:` in pubspec.yaml.
-const String kAppVersion = '1.1.0';
+const String kAppVersion = '1.2.0';
 
 const String kRepo = 'sabbirahmed77708-sudo/remote-mouse-';
 const String kReleasesPage = 'https://github.com/$kRepo/releases';
