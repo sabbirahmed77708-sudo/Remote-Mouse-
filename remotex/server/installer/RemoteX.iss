@@ -1,6 +1,6 @@
 ; Builds RemoteX-Setup.exe. Needs Inno Setup 6:  iscc /DAppVersion=1.1.0 installer\RemoteX.iss
 #ifndef AppVersion
-  #define AppVersion "1.2.1"
+  #define AppVersion "1.3.0"
 #endif
 
 [Setup]

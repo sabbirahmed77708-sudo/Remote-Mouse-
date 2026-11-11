@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../app_state.dart';
 import '../models/saved_pc.dart';
+import 'bluetooth_hid.dart';
 import 'discovery_service.dart';
 import 'remotex_client.dart';
 
@@ -13,7 +14,13 @@ enum LinkState { idle, connecting, connected, reconnecting, failed }
 /// Owns the live connection: pairing, authentication, heartbeat, automatic
 /// reconnection, and the typed command API used by the screens.
 class ConnectionController extends ChangeNotifier {
-  ConnectionController(this.app);
+  ConnectionController(this.app) {
+    bt.addListener(_onBluetooth);
+  }
+
+  /// Bluetooth link: the phone acts as a Bluetooth mouse/keyboard, nothing is needed on the PC.
+  final BluetoothHid bt = BluetoothHid();
+  bool viaBluetooth = false;
 
   final AppState app;
 
@@ -344,7 +351,40 @@ class ConnectionController extends ChangeNotifier {
     _set(LinkState.idle);
   }
 
+  void _onBluetooth() {
+    if (_disposed) return;
+    if (bt.connected && !viaBluetooth) {
+      // a Wi-Fi link (if any) is replaced by the Bluetooth one
+      unawaited(() async {
+        _generation++;
+        _wantConnected = false;
+        await _dropConnection();
+        viaBluetooth = true;
+        error = null;
+        pc = SavedPc(
+          id: 'bt:${bt.connectedAddress}',
+          name: bt.connectedName ?? 'PC',
+          host: 'Bluetooth',
+          port: 0,
+          fingerprint: '',
+          deviceKey: '',
+          lastConnected: DateTime.now().millisecondsSinceEpoch,
+        );
+        _set(LinkState.connected);
+      }());
+    } else if (!bt.connected && viaBluetooth) {
+      viaBluetooth = false;
+      pc = null;
+      _set(LinkState.idle);
+    }
+  }
+
   Future<void> _dropConnection() async {
+    if (viaBluetooth) {
+      viaBluetooth = false;
+      pc = null;
+      unawaited(bt.disconnect());
+    }
     _heartbeat?.cancel();
     _heartbeat = null;
     final sub = _sub;
@@ -375,6 +415,10 @@ class ConnectionController extends ChangeNotifier {
   // Commands (silently ignored while not connected)
   // -------------------------------------------------------------------------
   void _send(Map<String, dynamic> m) {
+    if (viaBluetooth) {
+      if (bt.connected) bt.handle(m);
+      return;
+    }
     final c = _conn;
     if (c == null || state != LinkState.connected) return;
     try {
@@ -409,6 +453,8 @@ class ConnectionController extends ChangeNotifier {
     final c = _conn;
     _conn = null;
     if (c != null) unawaited(c.close());
+    bt.removeListener(_onBluetooth);
+    bt.dispose();
     super.dispose();
   }
 }

@@ -1,0 +1,224 @@
+package __PACKAGE__
+
+import android.Manifest
+import android.annotation.SuppressLint
+import android.annotation.TargetApi
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothHidDevice
+import android.bluetooth.BluetoothHidDeviceAppSdpSettings
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import android.provider.Settings
+import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodCall
+import io.flutter.plugin.common.MethodChannel
+import java.util.concurrent.Executors
+
+/** Makes the phone show up as a Bluetooth mouse + keyboard + media keys (Bluetooth HID device, Android 9+). */
+class MainActivity : FlutterActivity() {
+    private var channel: MethodChannel? = null
+    private var hid: BtHid? = null
+    private var pendingInit: MethodChannel.Result? = null
+
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        val ch = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "remotex/bt")
+        channel = ch
+        ch.setMethodCallHandler { call, result -> handle(call, result) }
+    }
+
+    private fun needed(): Array<String> =
+        if (Build.VERSION.SDK_INT >= 31)
+            arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_ADVERTISE)
+        else emptyArray()
+
+    private fun hasPermissions(): Boolean =
+        needed().all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
+
+    private fun handle(call: MethodCall, result: MethodChannel.Result) {
+        when (call.method) {
+            "init" -> {
+                if (Build.VERSION.SDK_INT < 28) {
+                    result.success(mapOf("supported" to false, "problem" to "Bluetooth control needs Android 9 or newer."))
+                } else if (!hasPermissions()) {
+                    pendingInit?.success(mapOf("supported" to false, "problem" to "Cancelled."))
+                    pendingInit = result
+                    requestPermissions(needed(), 77)
+                } else {
+                    startHid(result)
+                }
+            }
+            "bonded" -> result.success(hid?.bonded() ?: emptyList<Map<String, String>>())
+            "connect" -> result.success(hid?.connect(call.argument<String>("address") ?: "") ?: false)
+            "disconnect" -> { hid?.disconnect(); result.success(null) }
+            "send" -> {
+                val id = call.argument<Int>("id") ?: 0
+                val data = call.argument<ByteArray>("data")
+                if (data != null) hid?.send(id, data)
+                result.success(null)
+            }
+            "discoverable" -> {
+                try {
+                    startActivity(Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE)
+                        .putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 120))
+                } catch (e: Exception) { /* no settings app: ignore */ }
+                result.success(null)
+            }
+            "settings" -> {
+                try { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) } catch (e: Exception) { }
+                result.success(null)
+            }
+            else -> result.notImplemented()
+        }
+    }
+
+    @TargetApi(28)
+    private fun startHid(result: MethodChannel.Result) {
+        val existing = hid
+        if (existing != null) {
+            result.success(existing.status())
+            return
+        }
+        val bm = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+        val adapter = bm.adapter
+        if (adapter == null) {
+            result.success(mapOf("supported" to false, "problem" to "This phone has no Bluetooth."))
+            return
+        }
+        if (!adapter.isEnabled) {
+            result.success(mapOf("supported" to false, "problem" to "Turn Bluetooth on, then open this screen again."))
+            return
+        }
+        val h = BtHid(this, adapter) { map -> runOnUiThread { channel?.invokeMethod("state", map) } }
+        hid = h
+        h.start(result)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != 77) return
+        val r = pendingInit ?: return
+        pendingInit = null
+        if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+            startHid(r)
+        } else {
+            r.success(mapOf("supported" to false, "problem" to "Bluetooth permission was denied. Allow \"Nearby devices\" for RemoteX in the phone settings."))
+        }
+    }
+
+    override fun onDestroy() {
+        hid?.close()
+        super.onDestroy()
+    }
+}
+
+@TargetApi(28)
+@SuppressLint("MissingPermission")
+class BtHid(
+    private val context: Context,
+    private val adapter: BluetoothAdapter,
+    private val notify: (Map<String, Any?>) -> Unit,
+) {
+    private var proxy: BluetoothHidDevice? = null
+    private var registered = false
+    private var host: BluetoothDevice? = null
+    private val executor = Executors.newSingleThreadExecutor()
+
+    private fun b(vararg v: Int) = ByteArray(v.size) { v[it].toByte() }
+
+    // Report id 1: mouse (3 buttons, x, y, wheel, horizontal wheel), id 2: keyboard, id 3: consumer control.
+    private val descriptor = b(
+        0x05, 0x01, 0x09, 0x02, 0xA1, 0x01, 0x85, 0x01, 0x09, 0x01, 0xA1, 0x00,
+        0x05, 0x09, 0x19, 0x01, 0x29, 0x03, 0x15, 0x00, 0x25, 0x01, 0x95, 0x03, 0x75, 0x01, 0x81, 0x02,
+        0x95, 0x01, 0x75, 0x05, 0x81, 0x03,
+        0x05, 0x01, 0x09, 0x30, 0x09, 0x31, 0x09, 0x38, 0x15, 0x81, 0x25, 0x7F, 0x75, 0x08, 0x95, 0x03, 0x81, 0x06,
+        0x05, 0x0C, 0x0A, 0x38, 0x02, 0x95, 0x01, 0x81, 0x06,
+        0xC0, 0xC0,
+        0x05, 0x01, 0x09, 0x06, 0xA1, 0x01, 0x85, 0x02,
+        0x05, 0x07, 0x19, 0xE0, 0x29, 0xE7, 0x15, 0x00, 0x25, 0x01, 0x75, 0x01, 0x95, 0x08, 0x81, 0x02,
+        0x95, 0x01, 0x75, 0x08, 0x81, 0x03,
+        0x95, 0x06, 0x75, 0x08, 0x15, 0x00, 0x25, 0x65, 0x05, 0x07, 0x19, 0x00, 0x29, 0x65, 0x81, 0x00,
+        0xC0,
+        0x05, 0x0C, 0x09, 0x01, 0xA1, 0x01, 0x85, 0x03,
+        0x15, 0x00, 0x26, 0xFF, 0x03, 0x19, 0x00, 0x2A, 0xFF, 0x03, 0x75, 0x10, 0x95, 0x01, 0x81, 0x00,
+        0xC0,
+    )
+
+    fun status(): Map<String, Any?> = mapOf("supported" to true, "registered" to registered)
+
+    fun start(result: MethodChannel.Result) {
+        var answered = false
+        fun answer(m: Map<String, Any?>) { if (!answered) { answered = true; result.success(m) } }
+        val ok = adapter.getProfileProxy(context, object : BluetoothProfile.ServiceListener {
+            override fun onServiceConnected(profile: Int, p: BluetoothProfile) {
+                val dev = p as BluetoothHidDevice
+                proxy = dev
+                val sdp = BluetoothHidDeviceAppSdpSettings(
+                    "RemoteX", "Phone as mouse and keyboard", "RemoteX",
+                    BluetoothHidDevice.SUBCLASS1_COMBO, descriptor,
+                )
+                val started = dev.registerApp(sdp, null, null, executor, object : BluetoothHidDevice.Callback() {
+                    override fun onAppStatusChanged(pluggedDevice: BluetoothDevice?, isRegistered: Boolean) {
+                        registered = isRegistered
+                        answer(mapOf("supported" to isRegistered,
+                            "registered" to isRegistered,
+                            "problem" to if (isRegistered) null else "Android refused to register RemoteX as a Bluetooth mouse. Some phone makers block this."))
+                        notify(mapOf("registered" to isRegistered, "state" to "registered"))
+                    }
+
+                    override fun onConnectionStateChanged(device: BluetoothDevice?, state: Int) {
+                        if (device == null) return
+                        if (state == BluetoothProfile.STATE_CONNECTED) {
+                            host = device
+                            notify(mapOf("registered" to registered, "state" to "connected",
+                                "name" to (device.name ?: "PC"), "address" to device.address))
+                        } else if (state == BluetoothProfile.STATE_DISCONNECTED) {
+                            if (host?.address == device.address) host = null
+                            notify(mapOf("registered" to registered, "state" to "disconnected", "address" to device.address))
+                        }
+                    }
+                })
+                if (!started) answer(mapOf("supported" to false, "problem" to "Could not register RemoteX as a Bluetooth mouse."))
+            }
+
+            override fun onServiceDisconnected(profile: Int) {
+                proxy = null
+                registered = false
+                host = null
+                notify(mapOf("registered" to false, "state" to "disconnected"))
+            }
+        }, BluetoothProfile.HID_DEVICE)
+        if (!ok) answer(mapOf("supported" to false, "problem" to "This phone does not offer Bluetooth mouse mode."))
+    }
+
+    fun bonded(): List<Map<String, String>> =
+        adapter.bondedDevices.map { mapOf("name" to (it.name ?: "Unknown device"), "address" to it.address) }
+
+    fun connect(address: String): Boolean {
+        val p = proxy ?: return false
+        return try { p.connect(adapter.getRemoteDevice(address)) } catch (e: Exception) { false }
+    }
+
+    fun disconnect() {
+        val h = host
+        val p = proxy
+        if (h != null && p != null) p.disconnect(h)
+    }
+
+    fun send(id: Int, data: ByteArray) {
+        val h = host
+        val p = proxy
+        if (h != null && p != null) p.sendReport(h, id, data)
+    }
+
+    fun close() {
+        try { proxy?.unregisterApp() } catch (e: Exception) { }
+        try { proxy?.let { adapter.closeProfileProxy(BluetoothProfile.HID_DEVICE, it) } } catch (e: Exception) { }
+    }
+}

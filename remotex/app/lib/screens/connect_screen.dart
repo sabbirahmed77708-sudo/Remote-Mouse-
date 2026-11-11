@@ -16,19 +16,20 @@ class ConnectScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Connect to a PC'),
           bottom: const TabBar(tabs: [
-            Tab(icon: Icon(Icons.wifi_find_rounded), text: 'Nearby'),
+            Tab(icon: Icon(Icons.wifi_find_rounded), text: 'Wi-Fi'),
             Tab(icon: Icon(Icons.qr_code_scanner_rounded), text: 'QR code'),
             Tab(icon: Icon(Icons.keyboard_rounded), text: 'Manual'),
+            Tab(icon: Icon(Icons.bluetooth_rounded), text: 'Bluetooth'),
           ]),
         ),
         body: const TabBarView(
           physics: NeverScrollableScrollPhysics(),
-          children: [_NearbyTab(), _QrTab(), _ManualTab()],
+          children: [_NearbyTab(), _QrTab(), _ManualTab(), _BluetoothTab()],
         ),
       ),
     );
@@ -427,6 +428,151 @@ class _AllowDialog extends StatelessWidget {
             ],
           ),
           actions: [TextButton(onPressed: conn.disconnect, child: const Text('Cancel'))],
+        );
+      },
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+
+/// Bluetooth mode: the phone pretends to be a Bluetooth mouse + keyboard. Nothing to install on the PC.
+class _BluetoothTab extends StatefulWidget {
+  const _BluetoothTab();
+
+  @override
+  State<_BluetoothTab> createState() => _BluetoothTabState();
+}
+
+class _BluetoothTabState extends State<_BluetoothTab> with WidgetsBindingObserver {
+  bool _starting = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _start());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) AppScope.read(context).conn.bt.refreshDevices();
+  }
+
+  Future<void> _start() async {
+    final bt = AppScope.read(context).conn.bt;
+    await bt.init();
+    if (mounted) setState(() => _starting = false);
+  }
+
+  Future<void> _connect(String address) async {
+    final scope = AppScope.read(context);
+    final navigator = Navigator.of(context);
+    final started = await scope.conn.bt.connect(address);
+    if (!mounted) return;
+    if (!started) {
+      showSnack(context, 'Could not start the connection. Is Bluetooth on the PC turned on?', error: true);
+      return;
+    }
+    // the link state arrives from Android; wait briefly for it
+    for (var i = 0; i < 40 && !scope.conn.bt.connected; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      if (!mounted) return;
+    }
+    if (scope.conn.bt.connected) {
+      scope.app.haptic(strong: true);
+      navigator.pop(true);
+    } else if (mounted) {
+      showSnack(context, 'The PC did not answer. Pair the phone in Windows first, then try again.', error: true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scope = AppScope.of(context);
+    final cs = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final bt = scope.conn.bt;
+    return ListenableBuilder(
+      listenable: bt,
+      builder: (context, _) {
+        if (_starting) return const Center(child: CircularProgressIndicator());
+        if (!bt.supported) {
+          return Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.bluetooth_disabled_rounded, size: 48, color: cs.outline),
+                const SizedBox(height: 14),
+                Text(bt.problem ?? 'Bluetooth mouse mode is not available on this phone.', textAlign: TextAlign.center),
+                const SizedBox(height: 16),
+                FilledButton.tonalIcon(
+                  onPressed: () {
+                    setState(() => _starting = true);
+                    _start();
+                  },
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Try again'),
+                ),
+                const SizedBox(height: 12),
+                Text('You can still use the Wi-Fi tabs.', style: text.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+              ],
+            ),
+          );
+        }
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Text('Use your phone as a Bluetooth mouse and keyboard. Nothing needs to be installed on the PC.',
+                style: text.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+            const SectionTitle('1. Pair once in Windows'),
+            Text(
+              'Press the button, then on the PC open Settings > Bluetooth & devices > Add device > Bluetooth '
+              'and pick this phone. Confirm the code on both screens.',
+              style: text.bodyMedium,
+            ),
+            const SizedBox(height: 10),
+            FilledButton.icon(
+              onPressed: bt.makeDiscoverable,
+              icon: const Icon(Icons.visibility_rounded),
+              label: const Text('Make this phone visible (2 min)'),
+            ),
+            const SectionTitle('2. Connect'),
+            if (bt.bonded.isEmpty)
+              Text('No paired devices yet. Finish step 1, then come back here.', style: text.bodyMedium?.copyWith(color: cs.onSurfaceVariant))
+            else
+              for (final d in bt.bonded)
+                Card(
+                  elevation: 0,
+                  color: cs.surfaceContainerHigh,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+                  child: ListTile(
+                    leading: Icon(bt.connectedAddress == d.address ? Icons.bluetooth_connected_rounded : Icons.bluetooth_rounded),
+                    title: Text(d.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                    subtitle: Text(bt.connectedAddress == d.address ? 'connected' : 'tap to connect'),
+                    onTap: bt.connectedAddress == d.address ? null : () => _connect(d.address),
+                  ),
+                ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                TextButton.icon(onPressed: bt.refreshDevices, icon: const Icon(Icons.refresh_rounded), label: const Text('Refresh')),
+                TextButton.icon(onPressed: bt.openSettings, icon: const Icon(Icons.settings_bluetooth_rounded), label: const Text('Phone Bluetooth settings')),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Bluetooth mode types US-keyboard characters only. Wi-Fi mode supports every language.',
+              style: text.bodySmall?.copyWith(color: cs.outline),
+            ),
+          ],
         );
       },
     );

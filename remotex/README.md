@@ -20,6 +20,9 @@ The APK is signed with the Flutter debug key, so Android will ask you to allow i
 3. First time the PC shows **Allow this phone?** with a 6-digit number; press Allow if the phone shows the same number. (QR code and typed code still work: double-click the tray icon to see them.)
 4. Next time the phone reconnects by itself (also after Wi-Fi drops).
 
+## Bluetooth mode (nothing to install on the PC)
+In the app: Connect to a PC > **Bluetooth**. Press "Make this phone visible", pair the phone in Windows (Settings > Bluetooth & devices > Add device), then tap the PC in the app. The phone acts as a Bluetooth mouse, keyboard and media keys. Needs Android 9+ and a phone that allows Bluetooth HID device mode (some makers block it); typing is US-layout characters only.
+
 ## Features
 Touchpad (move, tap = left click, two-finger tap = right click, two-finger scroll, tap-then-drag), Left/Right/Middle/Double click buttons, keyboard text + special keys + shortcuts, media (play/pause, next, previous, stop, volume, mute), connection status, auto discovery, manual IP, QR pairing, light/dark theme, haptics, saved PCs, auto-reconnect. Server: shows IPs, status, QR and code, lists paired phones, Disconnect / Remove, start with Windows.
 

@@ -89,6 +89,11 @@ def patch_manifest():
             '    <uses-permission android:name="android.permission.INTERNET"/>\n'
             '    <uses-permission android:name="android.permission.CAMERA"/>\n'
             '    <uses-permission android:name="android.permission.VIBRATE"/>\n'
+            '    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>\n'
+            '    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>\n'
+            '    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>\n'
+            '    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"/>\n'
+            '    <uses-feature android:name="android.hardware.bluetooth" android:required="false"/>\n'
             '    <uses-feature android:name="android.hardware.camera" android:required="false"/>\n'
             '    <uses-feature android:name="android.hardware.touchscreen" android:required="true"/>\n'
         )
@@ -96,6 +101,21 @@ def patch_manifest():
     if "usesCleartextTraffic" not in s:
         s = s.replace("<application", '<application\n        android:usesCleartextTraffic="false"', 1)
     write(MANIFEST, s)
+
+
+def write_main_activity():
+    """MainActivity with the Bluetooth mouse/keyboard bridge (see tool/MainActivity.kt.tmpl)."""
+    base = os.path.join(ANDROID, "app", "src", "main", "kotlin")
+    found = None
+    for root, _dirs, files in os.walk(base):
+        if "MainActivity.kt" in files:
+            found = os.path.join(root, "MainActivity.kt")
+    if not found:
+        sys.exit("MainActivity.kt not found under " + base)
+    m = re.search(r"^package\s+([\w.]+)", read(found), re.M)
+    package = m.group(1) if m else "app.remotex.remotex"
+    tmpl = read(os.path.join(APP, "tool", "MainActivity.kt.tmpl"))
+    write(found, tmpl.replace("__PACKAGE__", package))
 
 
 def icons():
@@ -137,5 +157,6 @@ if __name__ == "__main__":
     patch_gradle()
     patch_signing()
     patch_manifest()
+    write_main_activity()
     icons()
     print("android/ is ready (minSdk 24, INTERNET + CAMERA + VIBRATE, RemoteX icon)")
