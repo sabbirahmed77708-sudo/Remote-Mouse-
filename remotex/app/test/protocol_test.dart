@@ -38,6 +38,14 @@ void main() {
     );
   });
 
+  test('check code for Allow pairing', () {
+    expect(
+      pairingCheckCode(v['server_nonce'] as String, v['client_nonce'] as String, v['device_id'] as String,
+          v['fingerprint'] as String),
+      v['sas'],
+    );
+  });
+
   test('fingerprint base64url', () {
     expect(fingerprintFromB64(v['fingerprint_b64'] as String), v['fingerprint']);
   });

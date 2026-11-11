@@ -153,6 +153,23 @@ real server accepts (different fingerprint), and a fake server cannot produce a 
 `server_proof` (does not know the code). On success the client pins that fingerprint.
 Scanning the QR code is stronger because the fingerprint is pinned *before* connecting.
 
+## Pairing with "Allow" (no typed code)
+
+Used by the "Nearby" list. After `hello` the client sends
+
+```json
+{"t":"request","device_id":"<32 hex>","device_name":"Pixel 7","nonce":"<32 hex client nonce>"}
+```
+
+The server answers `{"t":"waiting","sas":"<6 digits>","timeout":60}` and shows "Allow this phone?" on the PC
+with the same number. `sas` is `"%06d" % (int(sha256("remotex-sas|" + server_nonce + "|" + client_nonce + "|" + device_id + "|" + fingerprint_seen)[:10 hex chars], 16) % 1000000)`.
+The client computes it itself from the certificate *it* saw and refuses if the server's number differs.
+When the user presses Allow, the server sends `{"t":"approved","device_key":"<64 hex>"}` and the session is ready.
+On Deny the server sends `error` code `denied` (close 4001). If nobody answers within 60 s the connection is closed (4008).
+Only one question is pending at a time (`busy` otherwise); every denial counts as a failure for the per-address lockout.
+Nothing is stored and no command is accepted before Allow. A man in the middle shows a different certificate, so the
+phone and the PC display different numbers and the user denies.
+
 ## Brute-force protection
 
 * Pairing code: 60 bits, single use, 5 minutes, rotated after 5 wrong attempts.

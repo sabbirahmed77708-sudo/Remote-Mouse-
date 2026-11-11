@@ -9,6 +9,7 @@ python -m PyInstaller --noconfirm --clean --onefile --noconsole ^
   --icon assets\icon.ico ^
   --add-data "assets\icon.ico;assets" ^
   --collect-submodules websockets ^
+  --hidden-import pystray._win32 ^
   run_server.py || goto :error
 echo.
 echo Built: %~dp0dist\RemoteXServer.exe

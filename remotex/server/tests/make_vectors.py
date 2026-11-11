@@ -21,6 +21,7 @@ def build():
         "server_proof": P.server_proof("abcd-efgh jkmn", snonce, cnonce, device_id, fp),
         "auth_proof": P.auth_proof(device_key, snonce, device_id, fp),
         "fingerprint_b64": P.fp_to_b64(fp),
+        "sas": P.sas(snonce, cnonce, device_id, fp),
     }
 
 

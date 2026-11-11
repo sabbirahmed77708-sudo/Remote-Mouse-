@@ -80,11 +80,25 @@ class Transport:
         def request_close(code, reason):
             loop.call_soon_threadsafe(lambda: asyncio.ensure_future(self._safe_close(ws, code, reason)))
 
+        def push(message):
+            async def _send():
+                try:
+                    await ws.send(json.dumps(message, separators=(",", ":")))
+                except Exception:
+                    pass
+            loop.call_soon_threadsafe(lambda: asyncio.ensure_future(_send()))
+
         session.set_close_callback(request_close)
+        session.set_send_callback(push)
         try:
             await ws.send(json.dumps(session.hello(), separators=(",", ":")))
             while True:
-                timeout = P.IDLE_TIMEOUT if session.ready else P.HANDSHAKE_TIMEOUT
+                if session.ready:
+                    timeout = P.IDLE_TIMEOUT
+                elif session.state == "waiting":
+                    timeout = P.REQUEST_TIMEOUT
+                else:
+                    timeout = P.HANDSHAKE_TIMEOUT
                 raw = await asyncio.wait_for(ws.recv(), timeout)
                 if isinstance(raw, bytes):
                     await self._safe_close(ws, 1003, "text frames only")

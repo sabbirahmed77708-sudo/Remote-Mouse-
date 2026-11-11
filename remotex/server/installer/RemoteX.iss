@@ -35,13 +35,13 @@ Source: "..\dist\RemoteXServer.exe"; DestDir: "{app}"; Flags: ignoreversion
 Name: "{autoprograms}\RemoteX\RemoteX Server"; Filename: "{app}\RemoteXServer.exe"
 Name: "{autoprograms}\RemoteX\Uninstall RemoteX Server"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\RemoteX Server"; Filename: "{app}\RemoteXServer.exe"; Tasks: desktopicon
-Name: "{commonstartup}\RemoteX Server"; Filename: "{app}\RemoteXServer.exe"; Parameters: "--minimized"; Tasks: startup
+Name: "{commonstartup}\RemoteX Server"; Filename: "{app}\RemoteXServer.exe"; Tasks: startup
 
 [Run]
 ; let the phone reach the PC on home/work (Private) networks without a Firewall question
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""RemoteX Server"""; Flags: runhidden
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""RemoteX Server"" dir=in action=allow program=""{app}\RemoteXServer.exe"" profile=private enable=yes"; Flags: runhidden
-Filename: "{app}\RemoteXServer.exe"; Description: "Open RemoteX Server now"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\RemoteXServer.exe"; Description: "Start RemoteX Server now (it runs quietly in the background)"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [UninstallRun]
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""RemoteX Server"""; Flags: runhidden; RunOnceId: "DelFirewall"

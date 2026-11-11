@@ -1,7 +1,9 @@
 """Desktop window: status, QR code for pairing, paired devices (disconnect / remove)."""
 import os
 import queue
+import socket
 import sys
+import threading
 import time
 import tkinter as tk
 from tkinter import messagebox, ttk
@@ -21,8 +23,11 @@ def _resource(name):
 
 
 class ServerWindow:
-    def __init__(self, root, engine, name, ips, port, minimized=False):
+    def __init__(self, root, engine, name, ips, port, minimized=False, background=False):
         self.root, self.engine, self.name, self.port = root, engine, name, port
+        self.background = background
+        self.tray = None
+        self.allow = None  # (request id, Toplevel)
         self.ips = ips
         self.events = queue.Queue()
         self.shown_code = None
@@ -92,7 +97,7 @@ class ServerWindow:
         left = ttk.Frame(body, style="Card.TFrame", padding=20)
         left.grid(row=0, column=0, sticky="ns", padx=(0, 16))
         ttk.Label(left, text="Pair a phone", style="H.TLabel").pack(anchor="w")
-        ttk.Label(left, text="Open RemoteX on your phone\nand scan this code.", style="Muted.TLabel").pack(anchor="w", pady=(2, 12))
+        ttk.Label(left, text="Open RemoteX on your phone and tap\nthis PC - or scan this code.", style="Muted.TLabel").pack(anchor="w", pady=(2, 12))
         self.qr_canvas = tk.Canvas(left, width=260, height=260, bg="white", highlightthickness=0)
         self.qr_canvas.pack()
         self.code_label = ttk.Label(left, text="", style="Code.TLabel")
@@ -173,10 +178,88 @@ class ServerWindow:
             messagebox.showerror("Start with Windows", "Could not change the setting:\n%s" % exc)
 
     def _on_close(self):
+        if self.background:
+            self.root.withdraw()  # keep running in the background (tray icon)
+            return
+        self._quit()
+
+    def _quit(self):
         if self.engine.connected_device_ids():
             if not messagebox.askyesno("Quit RemoteX Server", "A phone is connected. Quit and disconnect it?"):
                 return
+        if self.tray:
+            self.tray.stop()
         self.root.destroy()
+
+    def show(self):
+        self.root.deiconify()
+        self.root.lift()
+        try:
+            self.root.focus_force()
+        except tk.TclError:
+            pass
+
+    # ---- "Allow this phone?" prompt ----
+    def _show_allow(self, ev):
+        self._close_allow()
+        top = tk.Toplevel(self.root)
+        top.title("RemoteX - Allow this phone?")
+        top.configure(bg=CARD)
+        top.attributes("-topmost", True)
+        top.resizable(False, False)
+        try:
+            top.iconbitmap(_resource("icon.ico"))
+        except Exception:
+            pass
+        rid = ev["id"]
+        tk.Label(top, text="Allow this phone to control this PC?", bg=CARD, fg=TEXT, font=("Segoe UI", 14, "bold")).pack(padx=28, pady=(22, 4))
+        tk.Label(top, text="%s  (%s)" % (ev.get("name", "Phone"), ev.get("ip", "")), bg=CARD, fg=MUTED, font=("Segoe UI", 10)).pack()
+        sas = ev.get("sas", "")
+        tk.Label(top, text="%s %s" % (sas[:3], sas[3:]), bg=CARD, fg=ACCENT, font=("Consolas", 30, "bold")).pack(pady=(14, 2))
+        tk.Label(top, text="Press Allow only if the phone shows the same number.", bg=CARD, fg=TEXT, font=("Segoe UI", 10)).pack()
+        left = tk.Label(top, text="", bg=CARD, fg=MUTED, font=("Segoe UI", 9))
+        left.pack(pady=(6, 10))
+        row = tk.Frame(top, bg=CARD)
+        row.pack(pady=(0, 20))
+        ttk.Button(row, text="Allow", command=lambda: self._answer(rid, True)).pack(side="left", padx=6)
+        ttk.Button(row, text="Deny", style="Danger.TButton", command=lambda: self._answer(rid, False)).pack(side="left", padx=6)
+        top.protocol("WM_DELETE_WINDOW", lambda: self._answer(rid, False))
+        top.update_idletasks()
+        w, h = top.winfo_reqwidth(), top.winfo_reqheight()
+        top.geometry("+%d+%d" % ((top.winfo_screenwidth() - w) // 2, (top.winfo_screenheight() - h) // 3))
+        self.allow = (rid, top)
+        try:
+            import winsound
+            winsound.MessageBeep()
+        except Exception:
+            pass
+        deadline = time.time() + P.REQUEST_TIMEOUT
+
+        def countdown():
+            if not self.allow or self.allow[0] != rid:
+                return
+            remaining = int(deadline - time.time())
+            if remaining <= 0:
+                self._answer(rid, False)
+                return
+            left.configure(text="Asking again is possible after this closes (%ds)" % remaining)
+            top.after(1000, countdown)
+        countdown()
+
+    def _answer(self, rid, allowed):
+        if allowed:
+            self.engine.approve(rid)
+        else:
+            self.engine.deny(rid)
+        self._close_allow(rid)
+
+    def _close_allow(self, rid=None):
+        if self.allow and (rid is None or self.allow[0] == rid):
+            try:
+                self.allow[1].destroy()
+            except tk.TclError:
+                pass
+            self.allow = None
 
     # ---- refresh ----
     def _toast(self, text, seconds=6):
@@ -255,7 +338,15 @@ class ServerWindow:
             while True:
                 ev = self.events.get_nowait()
                 kind = ev.get("event")
-                if kind == "paired":
+                if kind == "request":
+                    self._show_allow(ev)
+                elif kind == "request_end":
+                    self._close_allow(ev.get("id"))
+                elif kind == "ui_open":
+                    self.show()
+                elif kind == "ui_quit":
+                    self._quit()
+                elif kind == "paired":
                     self._toast("Paired with %s" % ev.get("name"))
                 elif kind == "rejected":
                     self._toast("A device on %s used a wrong code or key" % ev.get("ip"))
@@ -268,16 +359,80 @@ class ServerWindow:
         self.root.after(250, self._poll)
 
 
-def run(engine, name, ips, port, minimized=False, selftest_ms=0):
-    """Open the window. With selftest_ms the window closes itself and the call returns 0."""
+def _listen_for_open(window, port):
+    """A second launch pings this local port, so double-clicking the shortcut opens the window."""
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.bind(("127.0.0.1", port))
+    except OSError:
+        return
+
+    def loop():
+        while True:
+            try:
+                data, _ = sock.recvfrom(64)
+            except OSError:
+                return
+            if data == b"REMOTEX_OPEN":
+                window.events.put({"event": "ui_open"})
+
+    threading.Thread(target=loop, name="remotex-open", daemon=True).start()
+
+
+def ask_running_instance_to_open(port=P.WS_PORT - 2):
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.sendto(b"REMOTEX_OPEN", ("127.0.0.1", port))
+        s.close()
+        return True
+    except OSError:
+        return False
+
+
+def run(engine, name, ips, port, minimized=False, selftest_ms=0, background=False, report=None):
+    """Open the window (or, with background=True, only a tray icon and the Allow prompts).
+    With selftest_ms the program closes itself and the call returns 0."""
     try:
         import ctypes
         ctypes.windll.shcore.SetProcessDpiAwareness(1)
     except Exception:
         pass
     root = tk.Tk()
-    ServerWindow(root, engine, name, ips, port, minimized=minimized and not selftest_ms)
+    window = ServerWindow(root, engine, name, ips, port, minimized=minimized and not selftest_ms and not background,
+                          background=background)
+    _listen_for_open(window, P.WS_PORT - 2)
+    if background:
+        try:
+            from .tray import Tray
+            window.tray = Tray(window.events.put, name)
+            window.tray.start()
+            if report:
+                report("tray=ok")
+            if not selftest_ms:
+                window.tray.notify("Running in the background. Open the RemoteX app on your phone and tap this PC.")
+            root.withdraw()
+        except Exception as exc:  # no tray available: stay usable with a minimised window
+            window.tray = None
+            window.background = False
+            if report:
+                report("tray=failed %r" % (exc,))
+            root.iconify()
     if selftest_ms:
+        def try_dialog():
+            try:
+                window._show_allow({"id": "selftest", "name": "Self-test phone", "ip": "127.0.0.1", "sas": "123456"})
+                assert window.allow is not None
+                root.update()
+                window._answer("selftest", True)
+                assert window.allow is None
+                if report:
+                    report("allow_dialog=ok")
+            except Exception as exc:
+                if report:
+                    report("allow_dialog=failed %r" % (exc,))
+        root.after(500, try_dialog)
         root.after(selftest_ms, root.destroy)
     root.mainloop()
+    if window.tray:
+        window.tray.stop()
     return 0

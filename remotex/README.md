@@ -15,9 +15,9 @@ GitHub → **Actions** tab → open the latest green run of
 The APK is signed with the Flutter debug key, so Android will ask you to allow installs from unknown sources.
 
 ## Use
-1. Run `RemoteXServer.exe` on the PC. Allow it on **Private networks** when Windows Firewall asks.
-2. Open RemoteX on the phone (same Wi-Fi) → **Connect to a PC**.
-3. First time: **QR code** tab and scan the code shown on the PC (best), or **Nearby** / **Manual** and type the pairing code.
+1. On the PC run `RemoteX-Server-Setup.exe` once (it adds a firewall rule and starts RemoteX quietly in the background: only a tray icon near the clock, no window).
+2. Open RemoteX on the phone (same Wi-Fi) → **Connect to a PC** → **Nearby** → tap your PC.
+3. First time the PC shows **Allow this phone?** with a 6-digit number; press Allow if the phone shows the same number. (QR code and typed code still work: double-click the tray icon to see them.)
 4. Next time the phone reconnects by itself (also after Wi-Fi drops).
 
 ## Features

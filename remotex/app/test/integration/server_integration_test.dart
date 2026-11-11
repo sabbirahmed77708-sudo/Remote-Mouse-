@@ -42,6 +42,7 @@ void main() {
       ...parts.skip(1),
       '--headless',
       '--dry-run-input',
+      '--auto-approve-requests',
       '--json-events',
       '--port',
       '$port',
@@ -150,6 +151,29 @@ void main() {
     await waitFor((e) => e['event'] == 'input' && e['op'] == 'media' && e['k'] == 'playpause');
     await c.close();
     await sub.cancel().timeout(const Duration(seconds: 2), onTimeout: () {});
+  });
+
+  test('pair with Allow (no code): same check number, key works afterwards', () async {
+    final id = randomHex(16);
+    String? sas;
+    final r = await requestPairing(
+      host: host,
+      port: port(),
+      deviceId: id,
+      deviceName: 'Allow phone',
+      onWaiting: (s) => sas = s,
+    );
+    expect(sas, matches(RegExp(r'^\d{6}$')));
+    final req = await waitFor((e) => e['event'] == 'request' && e['device_id'] == id);
+    expect(req['sas'], sas); // PC and phone show the same number
+    expect(r.connection.fingerprint, fp());
+    final sub = r.connection.messages().listen((_) {});
+    r.connection.send({'t': 'move', 'dx': 11, 'dy': 12});
+    await waitFor((e) => e['event'] == 'input' && e['op'] == 'move' && e['dx'] == 11);
+    await r.connection.close();
+    await sub.cancel().timeout(const Duration(seconds: 2), onTimeout: () {});
+    final again = await authenticate(host: host, port: port(), fingerprint: fp(), deviceId: id, deviceKey: r.deviceKey);
+    await again.close();
   });
 
   test('reconnect with the stored key (auth) and ping/pong', () async {

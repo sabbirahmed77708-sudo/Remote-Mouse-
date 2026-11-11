@@ -22,6 +22,10 @@ class ConnectionController extends ChangeNotifier {
   String? error;
   int? latencyMs;
 
+  /// While waiting for "Allow" on the PC: the number both screens must show.
+  String? waitingSas;
+  RemoteXConnection? _pairingConn;
+
   RemoteXConnection? _conn;
   StreamSubscription<Map<String, dynamic>>? _sub;
   Timer? _heartbeat;
@@ -73,6 +77,57 @@ class ConnectionController extends ChangeNotifier {
   /// First-time pairing by typing the PC address and the code shown on the PC.
   Future<bool> pairManual({required String host, required int port, required String code}) {
     return _pair(hosts: [host], port: port, code: code, pinned: null);
+  }
+
+  /// First-time pairing without a code: the PC owner presses Allow.
+  Future<bool> pairByAllow({required String host, required int port}) async {
+    final gen = ++_generation;
+    await _dropConnection();
+    error = null;
+    waitingSas = null;
+    _wantConnected = false;
+    _set(LinkState.connecting);
+    try {
+      final result = await requestPairing(
+        host: host,
+        port: port,
+        deviceId: app.deviceId,
+        deviceName: app.deviceName,
+        onConnection: (c) => _pairingConn = c,
+        onWaiting: (sas) {
+          if (gen != _generation) return;
+          waitingSas = sas;
+          notifyListeners();
+        },
+      );
+      _pairingConn = null;
+      if (gen != _generation) {
+        await result.connection.close();
+        return false;
+      }
+      final conn = result.connection;
+      final saved = SavedPc(
+        id: conn.hello.id,
+        name: conn.hello.name,
+        host: host,
+        port: port,
+        fingerprint: conn.fingerprint,
+        deviceKey: result.deviceKey,
+        lastConnected: DateTime.now().millisecondsSinceEpoch,
+      );
+      await app.upsertPc(saved);
+      waitingSas = null;
+      _wantConnected = true;
+      _attach(conn, saved);
+      return true;
+    } on RemoteXException catch (e) {
+      _pairingConn = null;
+      if (gen == _generation) {
+        waitingSas = null;
+        _fail(e);
+      }
+      return false;
+    }
   }
 
   Future<bool> _pair({
@@ -294,6 +349,10 @@ class ConnectionController extends ChangeNotifier {
     _heartbeat = null;
     final sub = _sub;
     _sub = null;
+    final pairing = _pairingConn;
+    _pairingConn = null;
+    waitingSas = null;
+    if (pairing != null) unawaited(pairing.close());
     final conn = _conn;
     _conn = null;
     latencyMs = null;

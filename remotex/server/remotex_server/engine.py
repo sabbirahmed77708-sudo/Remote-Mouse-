@@ -84,6 +84,8 @@ class Session:
         self.device_id = None
         self.device_name = None
         self._close_cb = None
+        self._send_cb = None
+        self.request_id = None
         self._lock = threading.Lock()
 
     @property
@@ -97,6 +99,15 @@ class Session:
     def set_close_callback(self, cb):
         self._close_cb = cb
 
+    def set_send_callback(self, cb):
+        self._send_cb = cb
+
+    def push(self, message):
+        """Send a message from outside the receive loop (used for the Allow answer)."""
+        cb = self._send_cb
+        if cb:
+            cb(message)
+
     def request_close(self, code, reason):
         """Called by the engine (any thread) to drop this connection."""
         cb = self._close_cb
@@ -107,6 +118,7 @@ class Session:
         with self._lock:
             was_ready = self.state == "ready"
             self.state = "closed"
+        self.engine._request_cancelled(self)
         self.engine._session_closed(self, was_ready)
 
     # ---- message handling ----
@@ -121,6 +133,10 @@ class Session:
             return Result()
         if self.state == "new":
             return self._handshake(msg)
+        if self.state == "waiting":
+            if msg.get("t") == "bye":
+                return Result(close=(1000, "bye"))
+            return Result()  # the phone is only waiting for the PC to answer
         if self.state != "ready":
             return Result()
         if msg.get("t") == "bye":
@@ -139,8 +155,20 @@ class Session:
             return self._fail("locked", "Too many failed attempts. Try again in a minute.", P.CLOSE_LOCKED)
         t = msg.get("t")
         device_id = msg.get("device_id")
-        if t not in ("pair", "auth") or not P.is_hex32(device_id):
-            return self._fail("bad_request", "Expected pair or auth", P.CLOSE_BAD_REQUEST)
+        if t not in ("pair", "auth", "request") or not P.is_hex32(device_id):
+            return self._fail("bad_request", "Expected pair, auth or request", P.CLOSE_BAD_REQUEST)
+
+        if t == "request":
+            client_nonce = msg.get("nonce")
+            if not P.is_hex32(client_nonce):
+                return self._fail("bad_request", "Bad nonce", P.CLOSE_BAD_REQUEST)
+            name = _clean_name(msg.get("device_name"))
+            sas = P.sas(self.nonce, client_nonce, device_id, eng.fingerprint)
+            self.state = "waiting"
+            if not eng._begin_request(self, device_id, name, sas):
+                self.state = "new"
+                return self._fail("busy", "The PC is already asking about another phone", P.CLOSE_UNAUTHORIZED)
+            return Result([{"t": "waiting", "sas": sas, "timeout": int(P.REQUEST_TIMEOUT)}])
 
         if t == "pair":
             client_nonce = msg.get("nonce")
@@ -199,6 +227,7 @@ class Engine:
         self._code = None
         self._code_expires = 0.0
         self._code_attempts = 0
+        self._request = None  # the one pending "Allow?" question, or None
         self.rotate_code()
 
     # ---- events ----
@@ -257,6 +286,63 @@ class Engine:
         if not chosen:
             raise ValueError("no address fits in the QR code")
         return base + "&h=" + ",".join(chosen) + suffix
+
+    # ---- "Allow?" pairing (no typed code) ----
+    def pending_request(self):
+        with self._lock:
+            return dict(self._request["info"]) if self._request else None
+
+    def _begin_request(self, session, device_id, name, sas):
+        with self._lock:
+            if self._request is not None:
+                return False
+            rid = secrets.token_hex(8)
+            session.request_id = rid
+            info = {"id": rid, "device_id": device_id, "name": name, "ip": session.peer_ip, "sas": sas}
+            self._request = {"info": info, "session": session}
+        self._emit(dict(info, event="request"))
+        return True
+
+    def _request_cancelled(self, session):
+        with self._lock:
+            req = self._request
+            if req is None or req["session"] is not session:
+                return
+            self._request = None
+            rid = req["info"]["id"]
+        self._emit({"event": "request_end", "id": rid, "result": "cancelled"})
+
+    def approve(self, request_id):
+        """The user pressed Allow on the PC."""
+        with self._lock:
+            req = self._request
+            if req is None or req["info"]["id"] != request_id:
+                return False
+            self._request = None
+            info, session = req["info"], req["session"]
+        if session.state != "waiting":
+            return False
+        key_hex = secrets.token_hex(32)
+        self.store.add_device(info["device_id"], info["name"], key_hex, info["ip"])
+        session._become_ready(info["device_id"], info["name"])
+        session.push({"t": "approved", "device_key": key_hex})
+        self._emit({"event": "request_end", "id": request_id, "result": "approved"})
+        self._emit({"event": "paired", "device_id": info["device_id"], "name": info["name"], "ip": info["ip"]})
+        return True
+
+    def deny(self, request_id):
+        """The user pressed Deny (or ignored it)."""
+        with self._lock:
+            req = self._request
+            if req is None or req["info"]["id"] != request_id:
+                return False
+            self._request = None
+            info, session = req["info"], req["session"]
+        self._record_failure(info["ip"])
+        session.push({"t": "error", "code": "denied", "msg": "The PC refused the connection"})
+        session.request_close(P.CLOSE_UNAUTHORIZED, "denied")
+        self._emit({"event": "request_end", "id": request_id, "result": "denied"})
+        return True
 
     # ---- failure lockout ----
     def _record_failure(self, ip):

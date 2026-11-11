@@ -30,12 +30,14 @@ def _parse(argv):
     ap = argparse.ArgumentParser(prog="remotex_server", description="RemoteX Windows server")
     ap.add_argument("--version", action="version", version="RemoteX Server " + __version__)
     ap.add_argument("--headless", action="store_true", help="no window; print the pairing link in the console")
-    ap.add_argument("--minimized", action="store_true", help="start minimised to the taskbar")
+    ap.add_argument("--minimized", action="store_true", help="same as --background (kept for old start-up shortcuts)")
+    ap.add_argument("--window", action="store_true", help="open the window instead of running in the background")
     ap.add_argument("--port", type=int, default=P.WS_PORT, help="WebSocket port (default %(default)s)")
     ap.add_argument("--name", default=None, help="PC name shown on the phone (default: Windows computer name)")
     ap.add_argument("--data-dir", default=None, help="where to keep the certificate and paired devices")
     ap.add_argument("--dry-run-input", action="store_true", help="do not move the mouse; report input events (testing)")
     ap.add_argument("--json-events", action="store_true", help="print one JSON object per line for every event")
+    ap.add_argument("--auto-approve-requests", action="store_true", help="TESTING ONLY: press Allow automatically")
     ap.add_argument("--gui-selftest", type=int, default=0, metavar="MS", help="open the window, close it after MS ms")
     return ap.parse_args(argv)
 
@@ -65,6 +67,8 @@ def main(argv=None):
     name = args.name or store.display_name or socket.gethostname() or "PC"
     engine = Engine(store, controller, fingerprint, name)
     engine.subscribe(emit)
+    if args.auto_approve_requests:
+        engine.subscribe(lambda e: engine.approve(e["id"]) if e.get("event") == "request" else None)
 
     transport = Transport(engine, certs.make_ssl_context(cert_path, key_path), port=args.port)
     try:
@@ -72,6 +76,13 @@ def main(argv=None):
     except TransportError as exc:
         msg = "Could not start on port %d: %s\nIs RemoteX Server already running?" % (args.port, exc)
         log.error(msg)
+        if not args.headless and not args.gui_selftest:
+            try:
+                from . import gui
+                if gui.ask_running_instance_to_open():
+                    return 0  # it is already running: just bring its window forward
+            except Exception:
+                pass
         if args.gui_selftest or not args.headless:
             try:
                 import tkinter
@@ -106,7 +117,14 @@ def main(argv=None):
                 time.sleep(3600)
         else:
             from . import gui
-            return gui.run(engine, name, ips, transport.port, minimized=args.minimized, selftest_ms=args.gui_selftest)
+
+            def report(line):  # the windowed exe has no console, so the self-test writes a file
+                if args.gui_selftest:
+                    with open(os.path.join(directory, "selftest.txt"), "a", encoding="utf-8") as f:
+                        f.write(line + "\n")
+
+            return gui.run(engine, name, ips, transport.port, selftest_ms=args.gui_selftest,
+                           background=not args.window, report=report)
     except KeyboardInterrupt:
         pass
     finally:

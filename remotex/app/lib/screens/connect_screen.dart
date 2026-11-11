@@ -87,12 +87,23 @@ class _NearbyTabState extends State<_NearbyTab> {
       await _attempt(context, () => scope.conn.connectSaved(saved));
       return;
     }
-    final code = await showDialog<String>(
+    // Not paired yet: ask the PC to show "Allow?" - no code to type.
+    final navigator = Navigator.of(context);
+    var dialogOpen = true;
+    showDialog<void>(
       context: context,
-      builder: (ctx) => _CodeDialog(name: d.name),
-    );
-    if (code == null || !mounted) return;
-    await _attempt(context, () => scope.conn.pairManual(host: d.host, port: d.port, code: code));
+      barrierDismissible: false,
+      builder: (ctx) => _AllowDialog(pcName: d.name),
+    ).then((_) => dialogOpen = false);
+    final ok = await scope.conn.pairByAllow(host: d.host, port: d.port);
+    if (dialogOpen && mounted) navigator.pop(); // closes the dialog
+    if (!mounted) return;
+    if (ok) {
+      scope.app.haptic(strong: true);
+      navigator.pop(true);
+    } else if (scope.conn.state == LinkState.failed) {
+      showSnack(context, scope.conn.error ?? 'Could not connect', error: true);
+    }
   }
 
   @override
@@ -124,7 +135,7 @@ class _NearbyTabState extends State<_NearbyTab> {
                         enabled: !busy,
                         leading: const Icon(Icons.laptop_windows_rounded),
                         title: Text(d.name, style: const TextStyle(fontWeight: FontWeight.w700)),
-                        subtitle: Text('${d.host}  -  ${scope.app.pcById(d.id) != null ? 'paired' : 'needs pairing code'}'),
+                        subtitle: Text('${d.host}  -  ${scope.app.pcById(d.id) != null ? 'paired' : 'tap to connect'}'),
                         trailing: const Icon(Icons.chevron_right_rounded),
                         onTap: () => _tap(d),
                       ),
@@ -378,50 +389,46 @@ class _ManualTabState extends State<_ManualTab> {
   }
 }
 
-class _CodeDialog extends StatefulWidget {
-  const _CodeDialog({required this.name});
-  final String name;
-
-  @override
-  State<_CodeDialog> createState() => _CodeDialogState();
-}
-
-class _CodeDialogState extends State<_CodeDialog> {
-  final _c = TextEditingController();
-  String? _err;
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  void _ok() {
-    final code = normalizeCode(_c.text);
-    if (code.length != 12) {
-      setState(() => _err = 'The code has 12 letters and digits.');
-      return;
-    }
-    Navigator.pop(context, code);
-  }
+class _AllowDialog extends StatelessWidget {
+  const _AllowDialog({required this.pcName});
+  final String pcName;
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text('Pair with ${widget.name}'),
-      content: TextField(
-        controller: _c,
-        autofocus: true,
-        autocorrect: false,
-        enableSuggestions: false,
-        textCapitalization: TextCapitalization.characters,
-        decoration: InputDecoration(labelText: 'Pairing code', hintText: 'ABCD-EFGH-JKMN', errorText: _err),
-        onSubmitted: (_) => _ok(),
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-        FilledButton(onPressed: _ok, child: const Text('Pair')),
-      ],
+    final conn = AppScope.of(context).conn;
+    final cs = Theme.of(context).colorScheme;
+    return ListenableBuilder(
+      listenable: conn,
+      builder: (context, _) {
+        final sas = conn.waitingSas;
+        return AlertDialog(
+          title: Text('Connecting to $pcName'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (sas == null) ...[
+                const LinearProgressIndicator(),
+                const SizedBox(height: 14),
+                const Text('Contacting the PC...'),
+              ] else ...[
+                const Text('On your PC, press Allow. Check that it shows this number:'),
+                const SizedBox(height: 14),
+                Center(
+                  child: Text(
+                    '${sas.substring(0, 3)} ${sas.substring(3)}',
+                    style: Theme.of(context).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w800, color: cs.primary),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text('If the numbers are different, press Deny on the PC.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+              ],
+            ],
+          ),
+          actions: [TextButton(onPressed: conn.disconnect, child: const Text('Cancel'))],
+        );
+      },
     );
   }
 }

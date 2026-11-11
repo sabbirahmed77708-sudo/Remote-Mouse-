@@ -47,6 +47,10 @@ jobs:
         run: |
           $p = Start-Process dist\RemoteXServer.exe -ArgumentList "--gui-selftest","3000","--data-dir","$env:RUNNER_TEMP\rx-gui","--port","48866" -PassThru -Wait
           if ($p.ExitCode -ne 0) { throw "GUI self-test exit code $($p.ExitCode)" }
+          $r = Get-Content "$env:RUNNER_TEMP\rx-gui\selftest.txt" -Raw
+          Write-Host $r
+          if ($r -notmatch "allow_dialog=ok") { throw "Allow dialog failed" }
+          if ($r -notmatch "tray=ok") { throw "Tray icon failed" }
       - name: Smoke test the EXE (TLS port answers, hello is sent)
         working-directory: remotex/server
         shell: pwsh

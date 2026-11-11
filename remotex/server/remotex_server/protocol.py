@@ -17,6 +17,7 @@ MAX_QR_BYTES = 106  # largest payload the built-in QR encoder (version 6-M) can 
 HANDSHAKE_TIMEOUT = 10.0
 IDLE_TIMEOUT = 30.0
 MAX_MESSAGE_BYTES = 16384
+REQUEST_TIMEOUT = 60.0  # how long the PC waits for the user to press Allow
 
 CLOSE_BAD_REQUEST = 4000
 CLOSE_UNAUTHORIZED = 4001
@@ -83,3 +84,10 @@ def fp_to_b64(fingerprint_hex):
 def fp_from_b64(text):
     padded = text + "=" * (-len(text) % 4)
     return base64.urlsafe_b64decode(padded.encode("ascii")).hex()
+
+
+def sas(server_nonce, client_nonce, device_id, fingerprint):
+    """6-digit check code shown on both screens when pairing by 'Allow' (no typed code).
+    A man in the middle presents a different certificate, so the two screens show different numbers."""
+    digest = hashlib.sha256(("remotex-sas|%s|%s|%s|%s" % (server_nonce, client_nonce, device_id, fingerprint)).encode()).hexdigest()
+    return "%06d" % (int(digest[:10], 16) % 1000000)

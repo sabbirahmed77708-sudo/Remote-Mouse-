@@ -28,7 +28,8 @@ class RemoteXException implements Exception {
       code == 'removed' ||
       code == 'bad_server' ||
       code == 'bad_proof' ||
-      code == 'pairing_closed';
+      code == 'pairing_closed' ||
+      code == 'denied';
 
   @override
   String toString() => message;
@@ -84,6 +85,13 @@ String serverProof(String code, String serverNonce, String clientNonce, String d
 
 String authProof(String deviceKeyHex, String serverNonce, String deviceId, String fingerprint) {
   return _hmacHex(fromHex(deviceKeyHex), 'remotex-auth|$serverNonce|$deviceId|$fingerprint');
+}
+
+/// 6-digit check code shown on phone and PC when pairing with "Allow" (must match docs/PROTOCOL.md).
+String pairingCheckCode(String serverNonce, String clientNonce, String deviceId, String fingerprint) {
+  final digest = sha256.convert(utf8.encode('remotex-sas|$serverNonce|$clientNonce|$deviceId|$fingerprint')).toString();
+  final n = int.parse(digest.substring(0, 10), radix: 16) % 1000000;
+  return n.toString().padLeft(6, '0');
 }
 
 String fingerprintFromB64(String text) {
@@ -273,6 +281,10 @@ RemoteXException _fromError(Map<String, dynamic> m) {
   switch (code) {
     case 'bad_proof':
       return RemoteXException('bad_proof', 'Wrong pairing code.');
+    case 'denied':
+      return RemoteXException('denied', 'The PC did not allow this phone. Try again and press Allow on the PC.');
+    case 'busy':
+      return RemoteXException('busy', 'The PC is already asking about another phone. Try again in a moment.');
     case 'pairing_closed':
       return RemoteXException('pairing_closed',
           'The PC is not accepting pairing right now. In RemoteX Server press "New code".');
@@ -345,6 +357,45 @@ Future<RemoteXConnection> authenticate({
     if (reply['t'] == 'error') throw _fromError(reply);
     if (reply['t'] != 'ready') throw RemoteXException('protocol', 'Unexpected reply from the PC.');
     return conn;
+  } catch (_) {
+    await conn.close();
+    rethrow;
+  }
+}
+
+/// Pairing without typing a code: the PC shows "Allow?" with the same 6-digit number.
+/// [onWaiting] gets that number; [onConnection] hands out the socket so the caller can cancel.
+/// The certificate is accepted once (trust on first use); the matching numbers on both screens
+/// are what protects against a man in the middle.
+Future<PairResult> requestPairing({
+  required String host,
+  required int port,
+  required String deviceId,
+  required String deviceName,
+  required void Function(String sas) onWaiting,
+  void Function(RemoteXConnection conn)? onConnection,
+  Duration timeout = const Duration(seconds: 5),
+  Duration waitForAllow = const Duration(seconds: 70),
+}) async {
+  final conn = await RemoteXConnection.open(host: host, port: port, timeout: timeout);
+  onConnection?.call(conn);
+  try {
+    final clientNonce = randomHex(16);
+    conn.send({'t': 'request', 'device_id': deviceId, 'device_name': deviceName, 'nonce': clientNonce});
+    final first = await conn.read(const Duration(seconds: 8));
+    if (first['t'] == 'error') throw _fromError(first);
+    final mine = pairingCheckCode(conn.hello.nonce, clientNonce, deviceId, conn.fingerprint);
+    if (first['t'] != 'waiting' || first['sas'] != mine) {
+      throw RemoteXException('bad_server', 'This PC could not be verified. Connection refused for your safety.');
+    }
+    onWaiting(mine);
+    final reply = await conn.read(waitForAllow);
+    if (reply['t'] == 'error') throw _fromError(reply);
+    final key = reply['device_key'];
+    if (reply['t'] != 'approved' || key is! String || key.length != 64) {
+      throw RemoteXException('protocol', 'Unexpected reply from the PC.');
+    }
+    return PairResult(conn, key);
   } catch (_) {
     await conn.close();
     rethrow;

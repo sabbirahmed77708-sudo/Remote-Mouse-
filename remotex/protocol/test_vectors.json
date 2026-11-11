@@ -12,5 +12,6 @@
   "pair_proof": "5ca03b6316c161e5b3e6945eb476caba1a9f533877857ff4ffba08d5b162172c",
   "server_proof": "f0df2efa261cc7428d927e34b7f5414277763e5f901a8b3a7a1098293d29a52c",
   "auth_proof": "a49929e06eae482bd42c2148659d29c5c8d1ac7e0c36410abd02ddf4eb075d64",
-  "fingerprint_b64": "q6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6s"
+  "fingerprint_b64": "q6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6s",
+  "sas": "808700"
 }

@@ -74,6 +74,14 @@ class RefClient:
             self.server_proof_ok = hmac.compare_digest(want, res.replies[0]["server_proof"])
         return res
 
+    def request(self, client_nonce=None):
+        cn = client_nonce or secrets.token_hex(16)
+        self.client_nonce = cn
+        res = self._send({"t": "request", "device_id": self.device_id, "device_name": self.name, "nonce": cn})
+        digest = hashlib.sha256(("remotex-sas|%s|%s|%s|%s" % (self.hello["nonce"], cn, self.device_id, self.fp_seen)).encode()).hexdigest()
+        self.my_sas = "%06d" % (int(digest[:10], 16) % 1000000)
+        return res
+
     def auth(self, key=None):
         key = key or self.device_key
         proof = _h(bytes.fromhex(key), "remotex-auth|%s|%s|%s" % (self.hello["nonce"], self.device_id, self.fp_seen))
