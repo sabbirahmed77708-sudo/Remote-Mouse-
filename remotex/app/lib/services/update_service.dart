@@ -3,10 +3,11 @@ import 'dart:convert';
 import 'dart:io';
 
 /// Version of this build. Keep in sync with `version:` in pubspec.yaml.
-const String kAppVersion = '1.2.0';
+const String kAppVersion = '1.2.1';
 
 const String kRepo = 'sabbirahmed77708-sudo/remote-mouse-';
 const String kReleasesPage = 'https://github.com/$kRepo/releases';
+const String kPcDownloadPage = 'https://github.com/$kRepo/releases/latest';
 
 class UpdateInfo {
   UpdateInfo({required this.current, required this.latest, required this.apkUrl, required this.pageUrl, required this.notes});

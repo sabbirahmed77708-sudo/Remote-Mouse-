@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../app_scope.dart';
 import '../models/saved_pc.dart';
 import '../services/connection_controller.dart';
+import '../services/update_service.dart';
 import '../widgets/common.dart';
 import '../widgets/logo.dart';
 
@@ -43,9 +46,11 @@ class HomeScreen extends StatelessWidget {
               ],
             ),
             const SectionTitle('Saved PCs'),
-            if (scope.app.pcs.isEmpty)
-              _EmptyCard(onConnect: onConnect)
-            else
+            if (scope.app.pcs.isEmpty) ...[
+              const _PcSetupCard(),
+              const SizedBox(height: 10),
+              _EmptyCard(onConnect: onConnect),
+            ] else
               for (final pc in scope.app.pcs) _PcTile(pc: pc, active: conn.pc?.id == pc.id && conn.connected),
           ],
         );
@@ -251,6 +256,69 @@ class _PcTile extends StatelessWidget {
                   final ok = await scope.conn.connectSaved(pc);
                   if (!ok && context.mounted) showSnack(context, scope.conn.error ?? 'Could not connect', error: true);
                 },
+        ),
+      ),
+    );
+  }
+}
+
+/// Tells the user how to get the tiny PC helper, without leaving the app.
+class _PcSetupCard extends StatelessWidget {
+  const _PcSetupCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      color: cs.primaryContainer,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.computer_rounded, color: cs.onPrimaryContainer),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text('Step 1: set up your PC (once)',
+                      style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: cs.onPrimaryContainer)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'This phone app is the only app you use. Your PC just needs a small helper installed once; '
+              'it runs quietly in the background and asks you to press Allow. On the PC open this link and '
+              'download "RemoteX-Server-Setup.exe":',
+              style: text.bodyMedium?.copyWith(color: cs.onPrimaryContainer),
+            ),
+            const SizedBox(height: 10),
+            SelectableText(kPcDownloadPage, style: text.bodySmall?.copyWith(color: cs.onPrimaryContainer, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              children: [
+                FilledButton.icon(
+                  onPressed: () async {
+                    await Clipboard.setData(const ClipboardData(text: kPcDownloadPage));
+                    if (context.mounted) showSnack(context, 'Link copied. Send it to your PC.');
+                  },
+                  icon: const Icon(Icons.copy_rounded),
+                  label: const Text('Copy link'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => launchUrl(Uri.parse(kPcDownloadPage), mode: LaunchMode.externalApplication),
+                  icon: const Icon(Icons.open_in_new_rounded),
+                  label: const Text('Open'),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
