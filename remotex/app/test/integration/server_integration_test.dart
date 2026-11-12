@@ -194,6 +194,32 @@ void main() {
     await sub.cancel().timeout(const Duration(seconds: 2), onTimeout: () {});
   });
 
+  test('live screen: frames arrive after "screen on" and stop after "screen off"', () async {
+    final c = await authenticate(
+      host: host,
+      port: port(),
+      fingerprint: fp(),
+      deviceId: deviceId,
+      deviceKey: deviceKey,
+    );
+    var frames = 0;
+    final first = Completer<void>();
+    c.onFrame = (f) {
+      frames++;
+      if (!first.isCompleted) first.complete();
+    };
+    final sub = c.messages().listen((_) {});
+    c.send({'t': 'screen', 'on': true, 'w': 320, 'q': 40});
+    await first.future.timeout(const Duration(seconds: 5));
+    c.send({'t': 'screen', 'on': false});
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    final after = frames;
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    expect(frames, after, reason: 'no frames once the preview is switched off');
+    await c.close();
+    await sub.cancel().timeout(const Duration(seconds: 2), onTimeout: () {});
+  });
+
   test('auth with a wrong key is refused', () async {
     await expectLater(
       authenticate(host: host, port: port(), fingerprint: fp(), deviceId: deviceId, deviceKey: '00' * 32),

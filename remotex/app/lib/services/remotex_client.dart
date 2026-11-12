@@ -6,6 +6,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 
@@ -168,6 +169,9 @@ class RemoteXConnection {
 
   int? get closeCode => _ws.closeCode;
 
+  /// Called with every live-screen JPEG frame the PC sends (binary WebSocket frames).
+  void Function(Uint8List frame)? onFrame;
+
   /// Opens a TLS WebSocket and reads the server `hello`.
   /// With [pinnedFingerprint] only that exact certificate is accepted.
   static Future<RemoteXConnection> open({
@@ -254,6 +258,10 @@ class RemoteXConnection {
   Stream<Map<String, dynamic>> messages() async* {
     while (await _iter.moveNext()) {
       final v = _iter.current;
+      if (v is List<int>) {
+        onFrame?.call(v is Uint8List ? v : Uint8List.fromList(v));
+        continue;
+      }
       if (v is! String) continue;
       try {
         final m = jsonDecode(v);

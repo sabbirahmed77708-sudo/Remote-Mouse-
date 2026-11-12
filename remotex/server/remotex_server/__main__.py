@@ -13,6 +13,7 @@ from . import __version__, certs, paths
 from . import protocol as P
 from .discovery import DiscoveryResponder, local_ips
 from .engine import Engine
+from . import screen as screen_mod
 from .inputs import DryRunInput, WindowsInput
 from .store import Store
 from .transport import Transport, TransportError
@@ -37,6 +38,7 @@ def _parse(argv):
     ap.add_argument("--data-dir", default=None, help="where to keep the certificate and paired devices")
     ap.add_argument("--dry-run-input", action="store_true", help="do not move the mouse; report input events (testing)")
     ap.add_argument("--json-events", action="store_true", help="print one JSON object per line for every event")
+    ap.add_argument("--no-screen", action="store_true", help="never share the screen preview with the phone")
     ap.add_argument("--auto-approve-requests", action="store_true", help="TESTING ONLY: press Allow automatically")
     ap.add_argument("--gui-selftest", type=int, default=0, metavar="MS", help="open the window, close it after MS ms")
     return ap.parse_args(argv)
@@ -70,7 +72,13 @@ def main(argv=None):
     if args.auto_approve_requests:
         engine.subscribe(lambda e: engine.approve(e["id"]) if e.get("event") == "request" else None)
 
-    transport = Transport(engine, certs.make_ssl_context(cert_path, key_path), port=args.port)
+    if args.no_screen:
+        source = None
+    elif args.dry_run_input:
+        source = screen_mod.FakeScreen()
+    else:
+        source = screen_mod.default_source()
+    transport = Transport(engine, certs.make_ssl_context(cert_path, key_path), port=args.port, screen=source)
     try:
         transport.start()
     except TransportError as exc:

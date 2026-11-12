@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
@@ -34,6 +35,11 @@ class ConnectionController extends ChangeNotifier {
   RemoteXConnection? _pairingConn;
 
   RemoteXConnection? _conn;
+
+  /// Latest live-screen frame (JPEG) from the PC, or null. Updated up to ~10 times a second.
+  final ValueNotifier<Uint8List?> screenFrame = ValueNotifier<Uint8List?>(null);
+  bool _screenWanted = false;
+  int _screenWidth = 640;
   StreamSubscription<Map<String, dynamic>>? _sub;
   Timer? _heartbeat;
   DateTime _lastPong = DateTime.now();
@@ -221,6 +227,9 @@ class ConnectionController extends ChangeNotifier {
 
   void _attach(RemoteXConnection conn, SavedPc target) {
     _conn = conn;
+    conn.onFrame = (f) {
+      if (conn == _conn && _screenWanted) screenFrame.value = f;
+    };
     pc = target;
     error = null;
     latencyMs = null;
@@ -238,6 +247,7 @@ class ConnectionController extends ChangeNotifier {
         );
     _heartbeat = Timer.periodic(const Duration(seconds: 5), (_) => _beat(conn));
     _beat(conn);
+    if (_screenWanted) _sendScreen(true);
   }
 
   void _onMessage(RemoteXConnection conn, Map<String, dynamic> m) {
@@ -270,6 +280,7 @@ class ConnectionController extends ChangeNotifier {
 
   void _onClosed(RemoteXConnection conn) {
     if (conn != _conn) return;
+    screenFrame.value = null;
     _heartbeat?.cancel();
     _heartbeat = null;
     unawaited(_sub?.cancel());
@@ -428,6 +439,23 @@ class ConnectionController extends ChangeNotifier {
     }
   }
 
+  /// Live PC screen preview (Wi-Fi only; the Bluetooth mouse mode has no data channel back).
+  /// [width] is the frame width in pixels the PC should send.
+  void watchScreen(bool on, {int width = 640}) {
+    _screenWanted = on;
+    _screenWidth = width;
+    if (!on) screenFrame.value = null;
+    if (!viaBluetooth) _sendScreen(on);
+  }
+
+  void _sendScreen(bool on) {
+    final c = _conn;
+    if (c == null || state != LinkState.connected) return;
+    try {
+      c.send(on ? {'t': 'screen', 'on': true, 'w': _screenWidth, 'q': 45} : {'t': 'screen', 'on': false});
+    } catch (_) {}
+  }
+
   void move(int dx, int dy) => _send({'t': 'move', 'dx': dx, 'dy': dy});
   void click(String button, {int count = 1}) => _send({'t': 'click', 'b': button, 'n': count});
   void button(String button, bool down) => _send({'t': 'btn', 'b': button, 'd': down});
@@ -453,6 +481,7 @@ class ConnectionController extends ChangeNotifier {
     final c = _conn;
     _conn = null;
     if (c != null) unawaited(c.close());
+    screenFrame.dispose();
     bt.removeListener(_onBluetooth);
     bt.dispose();
     super.dispose();

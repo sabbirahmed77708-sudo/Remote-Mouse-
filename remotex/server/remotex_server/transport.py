@@ -8,6 +8,7 @@ from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosed
 
 from . import protocol as P
+from . import screen as S
 
 log = logging.getLogger("remotex.transport")
 
@@ -17,8 +18,9 @@ class TransportError(Exception):
 
 
 class Transport:
-    def __init__(self, engine, ssl_context, host="0.0.0.0", port=P.WS_PORT):
+    def __init__(self, engine, ssl_context, host="0.0.0.0", port=P.WS_PORT, screen=None):
         self.engine = engine
+        self.screen = screen  # S.ScreenSource or None (preview disabled)
         self.ssl_context = ssl_context
         self.host = host
         self.port = port
@@ -88,6 +90,36 @@ class Transport:
                     pass
             loop.call_soon_threadsafe(lambda: asyncio.ensure_future(_send()))
 
+        stream = {"task": None}
+
+        async def _frames(width, quality):
+            while True:
+                t0 = loop.time()
+                try:
+                    data = await loop.run_in_executor(None, self.screen.grab, width, quality)
+                except Exception:
+                    data = None
+                if data:
+                    await ws.send(data)
+                await asyncio.sleep(max(0.02, 0.11 - (loop.time() - t0)))
+
+        def _screen_cmd(raw):
+            # only authenticated sessions; a bad message simply does nothing
+            if self.screen is None or not session.ready or '"screen"' not in raw:
+                return
+            try:
+                msg = json.loads(raw)
+            except ValueError:
+                return
+            if not isinstance(msg, dict) or msg.get("t") != "screen":
+                return
+            if stream["task"] is not None:
+                stream["task"].cancel()
+                stream["task"] = None
+            if msg.get("on") is True:
+                w, q = S.clamp_options(msg.get("w"), msg.get("q"))
+                stream["task"] = asyncio.ensure_future(_frames(w, q))
+
         session.set_close_callback(request_close)
         session.set_send_callback(push)
         try:
@@ -104,6 +136,7 @@ class Transport:
                     await self._safe_close(ws, 1003, "text frames only")
                     break
                 result = session.on_text(raw)
+                _screen_cmd(raw)
                 for reply in result.replies:
                     await ws.send(json.dumps(reply, separators=(",", ":")))
                 if result.close:
@@ -117,6 +150,8 @@ class Transport:
             log.exception("connection handler failed")
             await self._safe_close(ws, 1011, "internal error")
         finally:
+            if stream["task"] is not None:
+                stream["task"].cancel()
             session.closed()
 
     @staticmethod

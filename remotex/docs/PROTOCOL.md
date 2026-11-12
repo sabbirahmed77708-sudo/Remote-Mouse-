@@ -122,6 +122,7 @@ Only accepted after `paired` / `ready`. Unknown or invalid messages are ignored.
 | `{"t":"key","k":"<name>","n":1..50}` | tap a key `n` times |
 | `{"t":"combo","k":["ctrl","c"]}` | hold the keys in order, release in reverse, at most 5 keys |
 | `{"t":"media","k":"playpause"\|"next"\|"prev"\|"stop"\|"volup"\|"voldown"\|"mute"}` | media key |
+| `{"t":"screen","on":true,"w":640,"q":45}` | start the live screen preview (`w` 240-1280 px wide, `q` JPEG quality 20-80). `{"t":"screen","on":false}` stops it. Frames arrive as **binary** WebSocket messages, each one a complete JPEG (about 10 per second, mouse pointer drawn in). Only authenticated sessions get frames. The server can disable this with `--no-screen`. |
 | `{"t":"ping","ts":int}` | keep-alive; server answers `{"t":"pong","ts":<same>}` |
 | `{"t":"bye"}` | clean close |
 

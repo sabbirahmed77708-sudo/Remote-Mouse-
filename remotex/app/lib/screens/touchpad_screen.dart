@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
@@ -12,10 +13,13 @@ import '../widgets/common.dart';
 /// Gestures: one finger moves, tap = left click, two-finger tap = right click,
 /// two fingers drag = scroll, tap then touch-and-drag = drag and drop.
 class TouchpadScreen extends StatefulWidget {
-  const TouchpadScreen({super.key, required this.onConnect, this.onBack});
+  const TouchpadScreen({super.key, required this.onConnect, this.onBack, this.active = true});
 
   final VoidCallback onConnect;
   final VoidCallback? onBack;
+
+  /// False while another tab is shown: the live preview is switched off to save data and battery.
+  final bool active;
 
   @override
   State<TouchpadScreen> createState() => _TouchpadScreenState();
@@ -31,6 +35,7 @@ class _TouchpadScreenState extends State<TouchpadScreen> {
   int _maxPointers = 0;
   bool _dragging = false;
   final Set<String> _mods = {};
+  bool _preview = true; // user switch for the live PC screen
 
   double _accX = 0, _accY = 0, _accSX = 0, _accSY = 0;
   Timer? _flushTimer;
@@ -39,7 +44,9 @@ class _TouchpadScreenState extends State<TouchpadScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final first = _scope == null;
     _scope = AppScope.of(context);
+    if (first) WidgetsBinding.instance.addPostFrameCallback((_) => _syncPreview());
   }
 
   @override
@@ -49,8 +56,21 @@ class _TouchpadScreenState extends State<TouchpadScreen> {
     _flushTimer = Timer.periodic(const Duration(milliseconds: 8), (_) => _flush());
   }
 
+  void _syncPreview() {
+    final conn = _scope?.conn;
+    if (conn == null) return;
+    conn.watchScreen(widget.active && _preview, width: 640);
+  }
+
+  @override
+  void didUpdateWidget(covariant TouchpadScreen old) {
+    super.didUpdateWidget(old);
+    if (old.active != widget.active) _syncPreview();
+  }
+
   @override
   void dispose() {
+    _scope?.conn.watchScreen(false);
     _flushTimer?.cancel();
     if (_dragging) _scope?.conn.button('left', false);
     _glow.dispose();
@@ -420,6 +440,16 @@ class _TouchpadScreenState extends State<TouchpadScreen> {
               ],
             ),
           ),
+          if (conn.connected && !conn.viaBluetooth)
+            IconButton(
+              tooltip: _preview ? 'Hide PC screen' : 'Show PC screen',
+              onPressed: () {
+                setState(() => _preview = !_preview);
+                _syncPreview();
+              },
+              icon: Icon(_preview ? Icons.visibility_rounded : Icons.visibility_off_rounded,
+                  color: _preview ? _Ui.accent : _Ui.dim),
+            ),
           if (!conn.connected)
             TextButton(onPressed: widget.onConnect, child: const Text('Connect')),
         ],
@@ -449,17 +479,29 @@ class _TouchpadScreenState extends State<TouchpadScreen> {
               child: SizedBox.expand(
                 child: Stack(
                   children: [
-                    const Center(
-                      child: IgnorePointer(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.touch_app_rounded, size: 40, color: Colors.white24),
-                            SizedBox(height: 8),
-                            Text('Tap = click  -  two fingers = scroll', style: TextStyle(color: Colors.white30, fontSize: 12)),
-                          ],
-                        ),
-                      ),
+                    ValueListenableBuilder<Uint8List?>(
+                      valueListenable: _scope!.conn.screenFrame,
+                      builder: (context, frame, _) {
+                        if (frame != null) {
+                          return Positioned.fill(
+                            child: IgnorePointer(
+                              child: Image.memory(frame, fit: BoxFit.contain, gaplessPlayback: true, filterQuality: FilterQuality.low),
+                            ),
+                          );
+                        }
+                        return const Center(
+                          child: IgnorePointer(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.touch_app_rounded, size: 40, color: Colors.white24),
+                                SizedBox(height: 8),
+                                Text('Tap = click  -  two fingers = scroll', style: TextStyle(color: Colors.white30, fontSize: 12)),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
                     ),
                     ValueListenableBuilder<Offset?>(
                       valueListenable: _glow,
