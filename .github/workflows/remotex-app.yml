@@ -53,13 +53,11 @@ jobs:
           RX_STORE_PASS: remotex-update
           RX_KEY_ALIAS: remotex
           RX_KEY_PASS: remotex-update
-        run: flutter build apk --release --split-per-abi --obfuscate --split-debug-info=build/symbols
+        run: flutter build apk --release --target-platform android-arm64 --split-per-abi --obfuscate --split-debug-info=build/symbols
       - name: Name the APKs
         working-directory: remotex/app/build/app/outputs/flutter-apk
         run: |
           mv app-arm64-v8a-release.apk Remote-Mouse-arm64.apk
-          mv app-armeabi-v7a-release.apk Remote-Mouse-arm32.apk
-          mv app-x86_64-release.apk Remote-Mouse-x86_64.apk
           ls -la *.apk
       - uses: actions/upload-artifact@v4
         with:
