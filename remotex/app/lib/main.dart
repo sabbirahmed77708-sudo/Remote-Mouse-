@@ -101,7 +101,7 @@ class _ShellState extends State<Shell> {
   Widget build(BuildContext context) {
     final pages = <Widget>[
       HomeScreen(onNavigate: (i) => setState(() => _index = i), onConnect: _openConnect),
-      TouchpadScreen(onConnect: _openConnect),
+      TouchpadScreen(onConnect: _openConnect, onBack: () => setState(() => _index = 0)),
       KeyboardScreen(onConnect: _openConnect),
       MediaScreen(onConnect: _openConnect),
       const SettingsScreen(),
