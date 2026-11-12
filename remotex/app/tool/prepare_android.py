@@ -146,7 +146,7 @@ def icons():
           '''<?xml version="1.0" encoding="utf-8"?>
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
     <gradient android:type="linear" android:angle="315"
-        android:startColor="#3B82F6" android:endColor="#6366F1"/>
+        android:startColor="#10B981" android:endColor="#065F46"/>
 </shape>
 ''')
     write(os.path.join(RES, "drawable", "ic_launcher_foreground.xml"),
@@ -154,16 +154,23 @@ def icons():
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#FFFFFF"
-        android:pathData="M38,40 A16,16 0 0 1 70,40 L70,68 A16,16 0 0 1 38,68 Z"/>
-    <path android:fillColor="#4F74F4"
-        android:pathData="M38,50 L70,50 L70,52.2 L38,52.2 Z"/>
-    <path android:fillColor="#4F74F4"
-        android:pathData="M52.9,24.5 L55.1,24.5 L55.1,51 L52.9,51 Z"/>
-    <path android:fillColor="#4F74F4"
-        android:pathData="M51,35 A3,3 0 0 1 57,35 L57,41 A3,3 0 0 1 51,41 Z"/>
+    <group android:pivotX="54" android:pivotY="54" android:scaleX="0.78" android:scaleY="0.78">
+        <group android:pivotX="54" android:pivotY="54" android:rotation="18">
+            <path android:fillColor="#FFFFFF"
+                android:pathData="M38,50 A16,16 0 0 1 70,50 L70,74 A16,16 0 0 1 38,74 Z"/>
+            <path android:fillColor="#10966E"
+                android:pathData="M38,57.5 L70,57.5 L70,59.7 L38,59.7 Z"/>
+            <path android:fillColor="#10966E"
+                android:pathData="M52.9,34.5 L55.1,34.5 L55.1,58 L52.9,58 Z"/>
+            <path android:fillColor="#10966E"
+                android:pathData="M51,45 A3,3 0 0 1 57,45 L57,51 A3,3 0 0 1 51,51 Z"/>
+        </group>
+        <path android:strokeColor="#FFFFFF" android:strokeWidth="3" android:pathData="%s"/>
+        <path android:strokeColor="#CCFFFFFF" android:strokeWidth="3" android:pathData="%s"/>
+        <path android:strokeColor="#99FFFFFF" android:strokeWidth="3" android:pathData="%s"/>
+    </group>
 </vector>
-''')
+''' % ('M73.74,18.15 A10,10 0 0 1 81.85,29.74', 'M75.13,10.27 A18,18 0 0 1 89.73,31.13', 'M76.51,2.39 A26,26 0 0 1 97.61,32.51'))
     xml = ('<?xml version="1.0" encoding="utf-8"?>\n'
            '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
            '    <background android:drawable="@drawable/ic_launcher_bg"/>\n'
