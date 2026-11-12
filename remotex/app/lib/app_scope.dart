@@ -2,13 +2,15 @@ import 'package:flutter/widgets.dart';
 
 import 'app_state.dart';
 import 'services/connection_controller.dart';
+import 'services/update_service.dart';
 
 /// Gives every screen access to the settings and the live connection.
 class AppScope extends InheritedWidget {
-  const AppScope({super.key, required this.app, required this.conn, required super.child});
+  const AppScope({super.key, required this.app, required this.conn, required this.update, required super.child});
 
   final AppState app;
   final ConnectionController conn;
+  final UpdateController update;
 
   static AppScope of(BuildContext context) {
     final scope = context.dependOnInheritedWidgetOfExactType<AppScope>();
@@ -24,5 +26,5 @@ class AppScope extends InheritedWidget {
   }
 
   @override
-  bool updateShouldNotify(AppScope oldWidget) => app != oldWidget.app || conn != oldWidget.conn;
+  bool updateShouldNotify(AppScope oldWidget) => app != oldWidget.app || conn != oldWidget.conn || update != oldWidget.update;
 }

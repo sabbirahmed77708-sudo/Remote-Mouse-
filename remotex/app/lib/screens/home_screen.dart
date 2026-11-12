@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../app_scope.dart';
 import '../models/saved_pc.dart';
@@ -8,6 +7,7 @@ import '../services/connection_controller.dart';
 import '../services/update_service.dart';
 import '../widgets/common.dart';
 import '../widgets/logo.dart';
+import '../widgets/update_card.dart';
 
 /// Dashboard: connection card, quick actions and saved PCs.
 class HomeScreen extends StatelessWidget {
@@ -34,6 +34,7 @@ class HomeScreen extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 18),
+            UpdateCard(update: scope.update, compact: true),
             _ConnectionCard(conn: conn, onConnect: onConnect),
             const SectionTitle('Control'),
             Row(
@@ -294,11 +295,9 @@ class _PcSetupCard extends StatelessWidget {
             Text(
               'This phone app is the only app you use. Your PC just needs a small helper installed once; '
               'it runs quietly in the background and asks you to press Allow. On the PC open this link and '
-              'download "Remote-Mouse-Setup.exe":',
+              'download "Remote-Mouse-Setup.exe". Copy the link and send it to your PC (message, email or cloud drive).',
               style: text.bodyMedium?.copyWith(color: cs.onPrimaryContainer),
             ),
-            const SizedBox(height: 10),
-            SelectableText(kPcDownloadPage, style: text.bodySmall?.copyWith(color: cs.onPrimaryContainer, fontWeight: FontWeight.w600)),
             const SizedBox(height: 10),
             Wrap(
               spacing: 8,
@@ -310,11 +309,6 @@ class _PcSetupCard extends StatelessWidget {
                   },
                   icon: const Icon(Icons.copy_rounded),
                   label: const Text('Copy link'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () => launchUrl(Uri.parse(kPcDownloadPage), mode: LaunchMode.externalApplication),
-                  icon: const Icon(Icons.open_in_new_rounded),
-                  label: const Text('Open'),
                 ),
               ],
             ),

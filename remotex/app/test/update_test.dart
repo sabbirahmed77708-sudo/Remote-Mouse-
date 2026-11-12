@@ -44,4 +44,31 @@ void main() {
     }, current: '1.0.0');
     expect(info!.apkUrl, isNull);
   });
+
+  test('release notes lose build bookkeeping lines', () {
+    expect(
+      cleanNotes('New logo\n\nCo-Authored-By: Someone <a@b.c>\nClaude-Session: https://x/y'),
+      'New logo',
+    );
+    expect(cleanNotes('Co-Authored-By: x'), '');
+  });
+
+  test('size and sha256 of the apk are read from the release', () {
+    final sha = 'ab' * 32;
+    final info = parseRelease({
+      'tag_name': 'v2.0.0',
+      'assets': [
+        {'name': 'a-arm64.apk', 'browser_download_url': 'https://example.com/a.apk', 'size': 1234, 'digest': 'sha256:$sha'},
+      ],
+    }, current: '1.0.0');
+    expect(info!.apkSize, 1234);
+    expect(info.apkSha256, sha);
+    final bad = parseRelease({
+      'tag_name': 'v2.0.0',
+      'assets': [
+        {'name': 'a-arm64.apk', 'browser_download_url': 'https://example.com/a.apk', 'digest': 'sha256:zz'},
+      ],
+    }, current: '1.0.0');
+    expect(bad!.apkSha256, isNull);
+  });
 }

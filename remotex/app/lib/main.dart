@@ -10,20 +10,23 @@ import 'screens/settings_screen.dart';
 import 'screens/touchpad_screen.dart';
 import 'services/connection_controller.dart';
 import 'services/storage_service.dart';
+import 'services/update_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final storage = await StorageService.open();
   final app = AppState(storage);
   final conn = ConnectionController(app);
-  runApp(RemoteXApp(app: app, conn: conn));
+  final update = UpdateController();
+  runApp(RemoteXApp(app: app, conn: conn, update: update));
 }
 
 class RemoteXApp extends StatefulWidget {
-  const RemoteXApp({super.key, required this.app, required this.conn});
+  const RemoteXApp({super.key, required this.app, required this.conn, required this.update});
 
   final AppState app;
   final ConnectionController conn;
+  final UpdateController update;
 
   @override
   State<RemoteXApp> createState() => _RemoteXAppState();
@@ -37,6 +40,7 @@ class _RemoteXAppState extends State<RemoteXApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     widget.conn.connectLast();
+    widget.update.check(silent: true); // quietly look for a new version
   }
 
   @override
@@ -63,6 +67,7 @@ class _RemoteXAppState extends State<RemoteXApp> with WidgetsBindingObserver {
     return AppScope(
       app: widget.app,
       conn: widget.conn,
+      update: widget.update,
       child: ListenableBuilder(
         listenable: widget.app,
         builder: (context, _) => MaterialApp(

@@ -109,6 +109,7 @@ def patch_manifest():
             '    <uses-permission android:name="android.permission.INTERNET"/>\n'
             '    <uses-permission android:name="android.permission.CAMERA"/>\n'
             '    <uses-permission android:name="android.permission.VIBRATE"/>\n'
+            '    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>\n'
             '    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>\n'
             '    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>\n'
             '    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>\n'
@@ -118,6 +119,15 @@ def patch_manifest():
             '    <uses-feature android:name="android.hardware.touchscreen" android:required="true"/>\n'
         )
         s = re.sub(r"(<manifest[^>]*>\s*\n)", lambda m: m.group(1) + perms, s, count=1)
+    if "rx_file_paths" not in s:
+        provider = (
+            '        <provider android:name="androidx.core.content.FileProvider"\n'
+            '            android:authorities="${applicationId}.update" android:exported="false"\n'
+            '            android:grantUriPermissions="true">\n'
+            '            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/rx_file_paths"/>\n'
+            '        </provider>\n'
+        )
+        s = s.replace("</application>", provider + "    </application>", 1)
     if "usesCleartextTraffic" not in s:
         s = s.replace("<application", '<application\n        android:usesCleartextTraffic="false"', 1)
     write(MANIFEST, s)
@@ -136,6 +146,17 @@ def write_main_activity():
     package = m.group(1) if m else "app.remotex.remotex"
     tmpl = read(os.path.join(APP, "tool", "MainActivity.kt.tmpl"))
     write(found, tmpl.replace("__PACKAGE__", package))
+
+
+def update_support():
+    """FileProvider paths and the androidx.core dependency used by the in-app installer."""
+    write(os.path.join(RES, "xml", "rx_file_paths.xml"),
+          '<?xml version="1.0" encoding="utf-8"?>\n<paths>\n    <cache-path name="cache" path="."/>\n</paths>\n')
+    p = os.path.join(ANDROID, "app", "build.gradle.kts")
+    s = read(p)
+    if "androidx.core:core" not in s:
+        s += '\ndependencies {\n    implementation("androidx.core:core:1.13.1")\n}\n'
+        write(p, s)
 
 
 def icons():
@@ -189,5 +210,6 @@ if __name__ == "__main__":
     patch_signing()
     patch_manifest()
     write_main_activity()
+    update_support()
     icons()
     print("android/ is ready (minSdk 24, INTERNET + CAMERA + VIBRATE, Remote Mouse icon)")

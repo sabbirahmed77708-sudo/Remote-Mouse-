@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../app_scope.dart';
 import '../services/update_service.dart';
 import '../widgets/common.dart';
 import '../widgets/logo.dart';
+import '../widgets/update_card.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -218,133 +218,73 @@ class _SliderTile extends StatelessWidget {
   }
 }
 
-class _AboutCard extends StatefulWidget {
+class _AboutCard extends StatelessWidget {
   const _AboutCard();
-
-  @override
-  State<_AboutCard> createState() => _AboutCardState();
-}
-
-class _AboutCardState extends State<_AboutCard> {
-  bool _checking = false;
-  UpdateInfo? _info;
-  String? _error;
-
-  Future<void> _check() async {
-    setState(() {
-      _checking = true;
-      _error = null;
-    });
-    try {
-      final info = await checkForUpdate();
-      if (!mounted) return;
-      setState(() => _info = info);
-    } on UpdateException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _info = null;
-        _error = e.message;
-      });
-    } finally {
-      if (mounted) setState(() => _checking = false);
-    }
-  }
-
-  Future<void> _open(String url) async {
-    var ok = false;
-    try {
-      ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-    } catch (_) {}
-    if (!ok && mounted) showSnack(context, 'Could not open the browser. Open $kReleasesPage yourself.', error: true);
-  }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
-    final info = _info;
-    return Padding(
-      padding: const EdgeInsets.all(18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    final update = AppScope.of(context).update;
+    return ListenableBuilder(
+      listenable: update,
+      builder: (context, _) {
+        final s = update.stage;
+        return Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const LogoMark(size: 56),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Remote Mouse', style: text.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-                    Text('Version $kAppVersion', style: text.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text('Encrypted connection (TLS, pinned certificate). Protocol v1.',
-              style: text.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-          const SizedBox(height: 14),
-          if (info != null && info.available) ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(color: cs.primaryContainer, borderRadius: BorderRadius.circular(18)),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              Row(
                 children: [
-                  Text('Update available: ${info.latest}',
-                      style: text.titleSmall?.copyWith(color: cs.onPrimaryContainer, fontWeight: FontWeight.w700)),
-                  if (info.notes.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(info.notes,
-                        maxLines: 6,
-                        overflow: TextOverflow.ellipsis,
-                        style: text.bodySmall?.copyWith(color: cs.onPrimaryContainer)),
-                  ],
+                  const LogoMark(size: 56),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Remote Mouse', style: text.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                        Text('Version $kAppVersion', style: text.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+                      ],
+                    ),
+                  ),
                 ],
               ),
-            ),
-            const SizedBox(height: 10),
-            FilledButton.icon(
-              onPressed: () => _open(info.apkUrl ?? info.pageUrl),
-              icon: const Icon(Icons.download_rounded),
-              label: const Text('Download update'),
-            ),
-            const SizedBox(height: 4),
-            Text('Open the downloaded file to install it over this version. Your paired PCs are kept.',
-                style: text.bodySmall?.copyWith(color: cs.outline)),
-          ] else ...[
-            if (info != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Row(
-                  children: [
-                    Icon(Icons.check_circle_rounded, color: cs.primary, size: 20),
-                    const SizedBox(width: 8),
-                    Text('You have the latest version.', style: text.bodyMedium),
-                  ],
+              const SizedBox(height: 12),
+              Text('Encrypted connection (TLS, pinned certificate). Protocol v1.',
+                  style: text.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+              const SizedBox(height: 14),
+              if (update.hasUpdate)
+                UpdateCard(update: update)
+              else ...[
+                if (s == UpdateStage.upToDate)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(
+                      children: [
+                        Icon(Icons.check_circle_rounded, color: cs.primary, size: 20),
+                        const SizedBox(width: 8),
+                        Text('You have the latest version.', style: text.bodyMedium),
+                      ],
+                    ),
+                  ),
+                if (s == UpdateStage.failed && update.error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Text(update.error!, style: text.bodyMedium?.copyWith(color: cs.error)),
+                  ),
+                FilledButton.tonalIcon(
+                  onPressed: s == UpdateStage.checking ? null : () => update.check(),
+                  icon: s == UpdateStage.checking
+                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.system_update_rounded),
+                  label: Text(s == UpdateStage.checking ? 'Checking...' : 'Check for updates'),
                 ),
-              ),
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Text(_error!, style: text.bodyMedium?.copyWith(color: cs.error)),
-              ),
-            FilledButton.tonalIcon(
-              onPressed: _checking ? null : _check,
-              icon: _checking
-                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.system_update_rounded),
-              label: Text(_checking ? 'Checking...' : 'Check for updates'),
-            ),
-          ],
-          const SizedBox(height: 4),
-          TextButton(onPressed: () => _open(kReleasesPage), child: const Text('All versions on GitHub')),
-        ],
-      ),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 }

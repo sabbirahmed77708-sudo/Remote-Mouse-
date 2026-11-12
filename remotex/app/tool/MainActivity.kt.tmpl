@@ -12,12 +12,14 @@ import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
 import java.util.concurrent.Executors
 
 /** Makes the phone show up as a Bluetooth mouse + keyboard + media keys (Bluetooth HID device, Android 9+). */
@@ -31,6 +33,8 @@ class MainActivity : FlutterActivity() {
         val ch = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "remotex/bt")
         channel = ch
         ch.setMethodCallHandler { call, result -> handle(call, result) }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "remotex/update")
+            .setMethodCallHandler { call, result -> handleUpdate(call, result) }
     }
 
     private fun needed(): Array<String> =
@@ -73,6 +77,36 @@ class MainActivity : FlutterActivity() {
             "settings" -> {
                 try { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) } catch (e: Exception) { }
                 result.success(null)
+            }
+            else -> result.notImplemented()
+        }
+    }
+
+    /** In-app update: the app downloads the new APK into its cache and asks Android to install it. */
+    private fun handleUpdate(call: MethodCall, result: MethodChannel.Result) {
+        when (call.method) {
+            "cacheDir" -> result.success(cacheDir.absolutePath)
+            "install" -> {
+                try {
+                    val file = File(call.argument<String>("path") ?: "")
+                    if (!file.isFile || file.parentFile?.canonicalPath != cacheDir.canonicalPath) {
+                        result.error("bad_path", "Update file not found", null)
+                        return
+                    }
+                    if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
+                        startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+                        result.success("needs_permission")
+                        return
+                    }
+                    val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.update", file)
+                    val intent = Intent(Intent.ACTION_VIEW)
+                        .setDataAndType(uri, "application/vnd.android.package-archive")
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(intent)
+                    result.success("started")
+                } catch (e: Exception) {
+                    result.error("install_failed", e.message, null)
+                }
             }
             else -> result.notImplemented()
         }

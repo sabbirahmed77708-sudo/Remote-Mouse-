@@ -77,5 +77,6 @@ jobs:
         with:
           tag_name: ${{ steps.rel.outputs.tag }}
           name: Remote Mouse ${{ steps.rel.outputs.tag }}
+          body: Remote Mouse ${{ steps.rel.outputs.tag }}
           target_commitish: ${{ github.sha }}
           files: remotex/app/build/app/outputs/flutter-apk/Remote-Mouse-*.apk
