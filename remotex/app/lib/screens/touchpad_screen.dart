@@ -4,6 +4,8 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../app_scope.dart';
+import '../services/connection_controller.dart';
+import '../widgets/app_icon.dart';
 import '../widgets/common.dart';
 
 /// Large touchpad with dedicated buttons.
@@ -11,9 +13,12 @@ import '../widgets/common.dart';
 /// Gestures: one finger moves, tap = left click, two-finger tap = right click,
 /// two fingers drag = scroll, tap then touch-and-drag = drag and drop.
 class TouchpadScreen extends StatefulWidget {
-  const TouchpadScreen({super.key, required this.onConnect});
+  const TouchpadScreen({super.key, required this.onConnect, this.onOpenApps});
 
   final VoidCallback onConnect;
+
+  /// Tapping the "window in front" chip in the header opens the Apps screen.
+  final VoidCallback? onOpenApps;
 
   @override
   State<TouchpadScreen> createState() => _TouchpadScreenState();
@@ -149,13 +154,22 @@ class _TouchpadScreenState extends State<TouchpadScreen> {
     return ListenableBuilder(
       listenable: conn,
       builder: (context, _) {
+        final front = conn.connected ? conn.foreground : null;
         return Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
           child: Column(
             children: [
               Row(
                 children: [
-                  Expanded(child: Align(alignment: Alignment.centerLeft, child: StatusPill(conn: conn, onTap: widget.onConnect))),
+                  Flexible(flex: 2, child: Align(alignment: Alignment.centerLeft, child: StatusPill(conn: conn, onTap: widget.onConnect))),
+                  if (front != null)
+                    Flexible(
+                      flex: 3,
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 8),
+                        child: _FrontWindowChip(conn: conn, window: front, onTap: widget.onOpenApps),
+                      ),
+                    ),
                   if (conn.connected && conn.latencyMs != null)
                     Padding(
                       padding: const EdgeInsets.only(left: 8),
@@ -368,6 +382,46 @@ class _TouchpadScreenState extends State<TouchpadScreen> {
                 Text(label, style: Theme.of(context).textTheme.titleSmall?.copyWith(color: cs.onSecondaryContainer)),
               ],
             ),
+    );
+  }
+}
+
+/// "Which window is in front on the PC" (icon + title). Tap to open the Apps screen.
+class _FrontWindowChip extends StatelessWidget {
+  const _FrontWindowChip({required this.conn, required this.window, this.onTap});
+
+  final ConnectionController conn;
+  final RemoteWindow window;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Material(
+      color: cs.surfaceContainerHigh,
+      shape: const StadiumBorder(),
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(6, 4, 12, 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppIcon(conn: conn, app: window.app, size: 22),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  window.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

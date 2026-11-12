@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
@@ -10,6 +12,49 @@ import 'discovery_service.dart';
 import 'remotex_client.dart';
 
 enum LinkState { idle, connecting, connected, reconnecting, failed }
+
+/// One window on the PC that has a taskbar button (see "Open windows and apps" in PROTOCOL.md).
+class RemoteWindow {
+  const RemoteWindow({required this.id, required this.title, required this.app, required this.minimized});
+
+  final int id;
+  final String title;
+
+  /// Lower-case exe file name, e.g. "chrome.exe". Also the key of the icon.
+  final String app;
+  final bool minimized;
+
+  /// "chrome.exe" -> "Chrome"
+  String get appName => appDisplayName(app);
+
+  @override
+  bool operator ==(Object other) =>
+      other is RemoteWindow && other.id == id && other.title == title && other.app == app && other.minimized == minimized;
+
+  @override
+  int get hashCode => Object.hash(id, title, app, minimized);
+}
+
+String appDisplayName(String app) {
+  var n = app.toLowerCase().endsWith('.exe') ? app.substring(0, app.length - 4) : app;
+  if (n.isEmpty) return 'App';
+  n = n.replaceAll(RegExp(r'[_\-]+'), ' ');
+  return n[0].toUpperCase() + n.substring(1);
+}
+
+/// Reads the `items` of a `windows` message; entries that are not well formed are skipped.
+List<RemoteWindow> parseWindows(Object? items) {
+  final out = <RemoteWindow>[];
+  if (items is! List) return out;
+  for (final e in items) {
+    if (e is! Map) continue;
+    final id = e['id'], title = e['title'], app = e['app'];
+    if (id is int && title is String && app is String) {
+      out.add(RemoteWindow(id: id, title: title, app: app, minimized: e['min'] == true));
+    }
+  }
+  return out;
+}
 
 /// Owns the live connection: pairing, authentication, heartbeat, automatic
 /// reconnection, and the typed command API used by the screens.
@@ -37,6 +82,24 @@ class ConnectionController extends ChangeNotifier {
   StreamSubscription<Map<String, dynamic>>? _sub;
   Timer? _heartbeat;
   DateTime _lastPong = DateTime.now();
+
+  /// Windows open on the PC (refreshed every 2 s while connected over Wi-Fi) and the one in front (0 = none).
+  List<RemoteWindow> windows = const [];
+  int foregroundId = 0;
+
+  /// App icons by app key (PNG bytes). An empty list means "the PC has no icon for it".
+  final Map<String, Uint8List> icons = {};
+  final Set<String> _iconAsked = {};
+  String? _iconsForPc;
+  Timer? _windowTimer;
+
+  RemoteWindow? get foreground {
+    for (final w in windows) {
+      if (w.id == foregroundId) return w;
+    }
+    return null;
+  }
+
   bool _wantConnected = false;
   int _generation = 0;
   bool _disposed = false;
@@ -238,11 +301,47 @@ class ConnectionController extends ChangeNotifier {
         );
     _heartbeat = Timer.periodic(const Duration(seconds: 5), (_) => _beat(conn));
     _beat(conn);
+    _iconAsked.clear(); // ask again after a reconnect: an earlier request may have been lost
+    if (_iconsForPc != updated.id) {
+      icons.clear(); // icons belong to one PC
+      _iconsForPc = updated.id;
+    }
+    _windowTimer?.cancel();
+    _windowTimer = Timer.periodic(const Duration(seconds: 2), (_) => refreshWindows());
+    refreshWindows();
+  }
+
+  void _stopWindowPolling() {
+    _windowTimer?.cancel();
+    _windowTimer = null;
+    windows = const [];
+    foregroundId = 0;
   }
 
   void _onMessage(RemoteXConnection conn, Map<String, dynamic> m) {
     if (conn != _conn) return;
-    if (m['t'] == 'pong') {
+    if (m['t'] == 'windows') {
+      final list = parseWindows(m['items']);
+      final fg = m['fg'] is int ? m['fg'] as int : 0;
+      if (fg != foregroundId || !listEquals(list, windows)) {
+        windows = list;
+        foregroundId = fg;
+        notifyListeners();
+      }
+      for (final w in list) {
+        if (icons.containsKey(w.app) || !_iconAsked.add(w.app)) continue;
+        _send({'t': 'icon', 'k': w.app});
+      }
+    } else if (m['t'] == 'icon') {
+      final key = m['k'], png = m['png'];
+      if (key is! String) return;
+      try {
+        icons[key] = png is String ? base64Decode(png) : Uint8List(0);
+      } catch (_) {
+        icons[key] = Uint8List(0);
+      }
+      notifyListeners();
+    } else if (m['t'] == 'pong') {
       _lastPong = DateTime.now();
       final ts = m['ts'];
       if (ts is int) {
@@ -272,6 +371,7 @@ class ConnectionController extends ChangeNotifier {
     if (conn != _conn) return;
     _heartbeat?.cancel();
     _heartbeat = null;
+    _stopWindowPolling();
     unawaited(_sub?.cancel());
     _sub = null;
     _conn = null;
@@ -387,6 +487,7 @@ class ConnectionController extends ChangeNotifier {
     }
     _heartbeat?.cancel();
     _heartbeat = null;
+    _stopWindowPolling();
     final sub = _sub;
     _sub = null;
     final pairing = _pairingConn;
@@ -444,10 +545,36 @@ class ConnectionController extends ChangeNotifier {
   void combo(List<String> keys) => _send({'t': 'combo', 'k': keys});
   void media(String name) => _send({'t': 'media', 'k': name});
 
+  /// Asks the PC for its open windows (the answer arrives as a `windows` message). Wi-Fi link only.
+  void refreshWindows() {
+    if (viaBluetooth || state != LinkState.connected) return;
+    _send({'t': 'windows'});
+  }
+
+  /// action: focus, close, min, max or restore.
+  void windowAction(String action, int id) {
+    if (action == 'close') {
+      // disappear at once; if the app asks to save first, the next refresh brings it back
+      windows = [for (final w in windows) if (w.id != id) w];
+      notifyListeners();
+    }
+    _send({'t': 'win', 'a': action, 'id': id});
+    Future<void>.delayed(const Duration(milliseconds: 350), refreshWindows);
+    Future<void>.delayed(const Duration(milliseconds: 1200), refreshWindows);
+  }
+
+  /// Starts one of the apps the PC allows (see LAUNCH names in PROTOCOL.md).
+  void launch(String name) {
+    _send({'t': 'launch', 'k': name});
+    Future<void>.delayed(const Duration(milliseconds: 900), refreshWindows);
+    Future<void>.delayed(const Duration(milliseconds: 2500), refreshWindows);
+  }
+
   @override
   void dispose() {
     _disposed = true;
     _generation++;
+    _windowTimer?.cancel();
     _heartbeat?.cancel();
     unawaited(_sub?.cancel());
     final c = _conn;

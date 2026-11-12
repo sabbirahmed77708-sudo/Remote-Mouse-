@@ -44,12 +44,21 @@ class InputController:
     def combo(self, names): raise NotImplementedError
     def media(self, name): raise NotImplementedError
 
+    # open windows and apps (see windows_api.py)
+    def list_windows(self): raise NotImplementedError   # -> (front window id or 0, [ {id, title, app, min} ])
+    def window_icon(self, key): raise NotImplementedError  # -> base64 PNG or None
+    def window_action(self, action, window_id): raise NotImplementedError
+    def launch(self, name): raise NotImplementedError
+
 
 class DryRunInput(InputController):
     """Records what would have happened. Used by tests and by --dry-run-input."""
 
     def __init__(self, log=None):
         self.log = log or (lambda event: None)
+        self.fake_windows = []   # tests put {"id", "title", "app", "min"} dicts here
+        self.fake_front = 0
+        self.fake_icons = {}
 
     def move(self, dx, dy): self.log({"op": "move", "dx": dx, "dy": dy})
     def button(self, name, down): self.log({"op": "btn", "b": name, "d": down})
@@ -59,6 +68,10 @@ class DryRunInput(InputController):
     def key(self, name, repeat=1): self.log({"op": "key", "k": name, "n": repeat})
     def combo(self, names): self.log({"op": "combo", "k": list(names)})
     def media(self, name): self.log({"op": "media", "k": name})
+    def list_windows(self): return self.fake_front, [dict(w) for w in self.fake_windows]
+    def window_icon(self, key): return self.fake_icons.get(key)
+    def window_action(self, action, window_id): self.log({"op": "win", "a": action, "id": window_id})
+    def launch(self, name): self.log({"op": "launch", "k": name})
 
 
 # ---------------------------------------------------------------------------
@@ -100,6 +113,14 @@ class WindowsInput(InputController):
         self.user32.SendInput.restype = ctypes.c_uint
         self.user32.MapVirtualKeyW.argtypes = [ctypes.c_uint, ctypes.c_uint]
         self.user32.MapVirtualKeyW.restype = ctypes.c_uint
+        from .windows_api import WindowManager
+        self._windows = WindowManager()
+
+    # ---- open windows and apps ----
+    def list_windows(self): return self._windows.list_windows()
+    def window_icon(self, key): return self._windows.icon(key)
+    def window_action(self, action, window_id): self._windows.act(action, window_id)
+    def launch(self, name): self._windows.launch(name)
 
     # ---- low level ----
     def _send(self, inputs):

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'app_scope.dart';
 import 'app_state.dart';
+import 'screens/apps_screen.dart';
 import 'screens/connect_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/keyboard_screen.dart';
@@ -97,14 +98,23 @@ class _ShellState extends State<Shell> {
     await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => const ConnectScreen()));
   }
 
+  Future<void> _openSettings() async {
+    await Navigator.of(context).push<void>(MaterialPageRoute(
+      builder: (_) => Scaffold(
+        appBar: AppBar(title: const Text('Settings')),
+        body: const SafeArea(child: SettingsScreen(showTitle: false)),
+      ),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
-      HomeScreen(onNavigate: (i) => setState(() => _index = i), onConnect: _openConnect),
-      TouchpadScreen(onConnect: _openConnect),
+      HomeScreen(onNavigate: (i) => setState(() => _index = i), onConnect: _openConnect, onSettings: _openSettings),
+      TouchpadScreen(onConnect: _openConnect, onOpenApps: () => setState(() => _index = 2)),
+      AppsScreen(onConnect: _openConnect),
       KeyboardScreen(onConnect: _openConnect),
       MediaScreen(onConnect: _openConnect),
-      const SettingsScreen(),
     ];
     return Scaffold(
       body: SafeArea(child: IndexedStack(index: _index, children: pages)),
@@ -117,9 +127,9 @@ class _ShellState extends State<Shell> {
         destinations: const [
           NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home_rounded), label: 'Home'),
           NavigationDestination(icon: Icon(Icons.touch_app_outlined), selectedIcon: Icon(Icons.touch_app_rounded), label: 'Touchpad'),
+          NavigationDestination(icon: Icon(Icons.grid_view_outlined), selectedIcon: Icon(Icons.grid_view_rounded), label: 'Apps'),
           NavigationDestination(icon: Icon(Icons.keyboard_outlined), selectedIcon: Icon(Icons.keyboard_rounded), label: 'Keyboard'),
           NavigationDestination(icon: Icon(Icons.play_circle_outline_rounded), selectedIcon: Icon(Icons.play_circle_rounded), label: 'Media'),
-          NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings_rounded), label: 'Settings'),
         ],
       ),
     );

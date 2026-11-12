@@ -24,7 +24,9 @@ The APK is signed with the Flutter debug key, so Android will ask you to allow i
 In the app: Connect to a PC > **Bluetooth**. Press "Make this phone visible", pair the phone in Windows (Settings > Bluetooth & devices > Add device), then tap the PC in the app. The phone acts as a Bluetooth mouse, keyboard and media keys. Needs Android 9+ and a phone that allows Bluetooth HID device mode (some makers block it); typing is US-layout characters only.
 
 ## Features
-Touchpad (move, tap = left click, two-finger tap = right click, two-finger scroll, tap-then-drag), Left/Right/Middle/Double click buttons, keyboard text + special keys + shortcuts, media (play/pause, next, previous, stop, volume, mute), connection status, auto discovery, manual IP, QR pairing, light/dark theme, haptics, saved PCs, auto-reconnect. Server: shows IPs, status, QR and code, lists paired phones, Disconnect / Remove, start with Windows.
+Touchpad (move, tap = left click, two-finger tap = right click, two-finger scroll, tap-then-drag), Left/Right/Middle/Double click buttons, keyboard text + special keys + shortcuts, media (play/pause, next, previous, stop, volume, mute), connection status, auto discovery, manual IP, QR pairing, light/dark theme, haptics, saved PCs, auto-reconnect.
+
+**Apps tab** (Wi-Fi link): every window that is open on the PC with its real icon and title, refreshed every 2 seconds. Tap one to bring it to the front, press **X** to close it (the app still asks to save unsaved work), or use the menu for minimize / maximize / restore. Below that, tiles to start Chrome, Edge, Files, Notepad, Calculator, Task Manager, Paint, Settings and Snip. The touchpad header shows which window is in front; tap it to jump to the Apps tab. Settings moved to the gear button on Home. Server: shows IPs, status, QR and code, lists paired phones, Disconnect / Remove, start with Windows.
 
 ## Security model
 - Every connection is TLS (`wss://`) with a self-signed certificate created on first start.
@@ -46,6 +48,7 @@ Verified automatically on GitHub Actions (see the workflow runs):
 - App: `flutter analyze` has no errors; Dart crypto matches the Python test vectors; the real Dart client pairs with the real Python server, sends every command type and the server received them (dry-run input), reconnects with the stored key, and refuses wrong fingerprint, wrong code, wrong key and unauthenticated commands; release APK builds.
 
 **Not tested** (needs real hardware, nobody has run it yet):
+- The Apps tab on a real PC: the Win32 window list, icon extraction and focus/close calls in `windows_api.py` are only covered by unit tests of their pure parts (rules for which windows count, PNG/alpha code, command handling).
 - Real mouse/keyboard/media input on Windows (the server was tested with input in dry-run mode; the Win32 `SendInput` code was not exercised).
 - The app on a real phone: touch feel, QR camera scan, haptics, UI layout, discovery on a real router (some routers block UDP broadcast – use QR/Manual then).
 - Windows Firewall prompt behaviour and start-with-Windows on a real PC.

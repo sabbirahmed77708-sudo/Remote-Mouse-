@@ -7,7 +7,10 @@ import '../widgets/logo.dart';
 import '../widgets/update_card.dart';
 
 class SettingsScreen extends StatelessWidget {
-  const SettingsScreen({super.key});
+  const SettingsScreen({super.key, this.showTitle = true});
+
+  /// The big "Settings" heading; off when the screen sits under an app bar that already says it.
+  final bool showTitle;
 
   @override
   Widget build(BuildContext context) {
@@ -20,7 +23,8 @@ class SettingsScreen extends StatelessWidget {
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
           children: [
-            Text('Settings', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
+            if (showTitle)
+              Text('Settings', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
             const SectionTitle('Appearance'),
             _Card(
               child: Padding(

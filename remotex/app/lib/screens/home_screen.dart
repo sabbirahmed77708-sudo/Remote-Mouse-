@@ -11,10 +11,12 @@ import '../widgets/update_card.dart';
 
 /// Dashboard: connection card, quick actions and saved PCs.
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key, required this.onNavigate, required this.onConnect});
+  const HomeScreen({super.key, required this.onNavigate, required this.onConnect, required this.onSettings});
 
+  /// Tab numbers: 1 Touchpad, 2 Apps, 3 Keyboard, 4 Media.
   final ValueChanged<int> onNavigate;
   final VoidCallback onConnect;
+  final VoidCallback onSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +32,17 @@ class HomeScreen extends StatelessWidget {
               children: [
                 const LogoMark(size: 48),
                 const SizedBox(width: 12),
-                Text('Remote Mouse', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
+                Expanded(
+                  child: Text('Remote Mouse',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
+                ),
+                IconButton.filledTonal(
+                  tooltip: 'Settings',
+                  icon: const Icon(Icons.settings_rounded),
+                  onPressed: onSettings,
+                ),
               ],
             ),
             const SizedBox(height: 18),
@@ -41,9 +53,15 @@ class HomeScreen extends StatelessWidget {
               children: [
                 Expanded(child: _ActionTile(icon: Icons.touch_app_rounded, label: 'Touchpad', onTap: () => onNavigate(1))),
                 const SizedBox(width: 12),
-                Expanded(child: _ActionTile(icon: Icons.keyboard_rounded, label: 'Keyboard', onTap: () => onNavigate(2))),
+                Expanded(child: _ActionTile(icon: Icons.grid_view_rounded, label: 'Apps & windows', onTap: () => onNavigate(2))),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(child: _ActionTile(icon: Icons.keyboard_rounded, label: 'Keyboard', onTap: () => onNavigate(3))),
                 const SizedBox(width: 12),
-                Expanded(child: _ActionTile(icon: Icons.play_circle_rounded, label: 'Media', onTap: () => onNavigate(3))),
+                Expanded(child: _ActionTile(icon: Icons.play_circle_rounded, label: 'Media', onTap: () => onNavigate(4))),
               ],
             ),
             const SectionTitle('Saved PCs'),

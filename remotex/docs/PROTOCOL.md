@@ -123,6 +123,10 @@ Only accepted after `paired` / `ready`. Unknown or invalid messages are ignored.
 | `{"t":"combo","k":["ctrl","c"]}` | hold the keys in order, release in reverse, at most 5 keys |
 | `{"t":"media","k":"playpause"\|"next"\|"prev"\|"stop"\|"volup"\|"voldown"\|"mute"}` | media key |
 | `{"t":"ping","ts":int}` | keep-alive; server answers `{"t":"pong","ts":<same>}` |
+| `{"t":"windows"}` | list the open windows; server answers `windows` (see "Open windows and apps") |
+| `{"t":"icon","k":"<app>"}` | icon of an app seen in the last list; server answers `icon` |
+| `{"t":"win","a":"focus"\|"close"\|"min"\|"max"\|"restore","id":int}` | act on one listed window (no answer) |
+| `{"t":"launch","k":"<name>"}` | start one of the fixed apps below (no answer) |
 | `{"t":"bye"}` | clean close |
 
 Key names: `a`-`z`, `0`-`9`, `f1`-`f12`, `enter`, `esc`, `tab`, `space`, `backspace`, `delete`,
@@ -131,6 +135,24 @@ Key names: `a`-`z`, `0`-`9`, `f1`-`f12`, `enter`, `esc`, `tab`, `space`, `backsp
 The client sends `ping` every 5 s. The server closes a session that is silent for 30 s,
 and the WebSocket layer also sends protocol pings every 10 s. A client that gets no `pong`
 for 12 s treats the connection as lost and reconnects.
+
+## Open windows and apps
+
+The phone polls `{"t":"windows"}` (every 2 s while connected). Answer:
+
+```json
+{"t":"windows","fg":<id of the window in front, or 0>,"items":[{"id":<int>,"title":"<=80 chars","app":"chrome.exe","min":false}]}
+```
+
+* Only windows that have a taskbar button are listed, at most 40, in a stable order (not by focus).
+* `id` is the window handle. `win` actions are only carried out for a handle that is in the current list;
+  anything else is ignored. `close` sends a normal close request, so an app with unsaved work still asks to save.
+* `app` is the lower-case exe file name. The phone asks once per app for its icon:
+  `{"t":"icon","k":"chrome.exe"}` -> `{"t":"icon","k":"chrome.exe","png":"<base64 PNG 32x32>"}`; `png` is `null`
+  when no icon could be read. The server only reads icons of apps it has listed, never a path sent by the phone.
+* `launch` names: `chrome`, `edge`, `explorer`, `notepad`, `calc`, `taskmgr`, `paint`, `settings`, `snip`.
+  Nothing else can be started from the phone.
+* Not available over the Bluetooth link.
 
 ## Discovery (UDP)
 

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:remotex/services/connection_controller.dart' show parseWindows;
 import 'package:remotex/services/remotex_client.dart';
 
 /// Real Dart client against the real Python server (dry-run input, so nothing moves).
@@ -190,6 +191,34 @@ void main() {
     });
     c.send({'t': 'ping', 'ts': 1});
     await pong.future.timeout(const Duration(seconds: 5));
+    await c.close();
+    await sub.cancel().timeout(const Duration(seconds: 2), onTimeout: () {});
+  });
+
+  test('open windows and apps: list, icon, window action, launch', () async {
+    final c = await authenticate(host: host, port: port(), fingerprint: fp(), deviceId: deviceId, deviceKey: deviceKey);
+    final listReply = Completer<Map<String, dynamic>>();
+    final iconReply = Completer<Map<String, dynamic>>();
+    final sub = c.messages().listen((m) {
+      if (m['t'] == 'windows' && !listReply.isCompleted) listReply.complete(m);
+      if (m['t'] == 'icon' && !iconReply.isCompleted) iconReply.complete(m);
+    });
+    c.send({'t': 'windows'});
+    final list = await listReply.future.timeout(const Duration(seconds: 5));
+    expect(list['items'], isA<List>()); // dry-run input has no windows, but the answer must be well formed
+    expect(list['fg'], isA<int>());
+    expect(parseWindows(list['items']), isEmpty);
+    c.send({'t': 'icon', 'k': 'chrome.exe'});
+    final icon = await iconReply.future.timeout(const Duration(seconds: 5));
+    expect(icon['k'], 'chrome.exe');
+    expect(icon['png'], isNull);
+    c.send({'t': 'win', 'a': 'close', 'id': 4242});
+    c.send({'t': 'launch', 'k': 'notepad'});
+    c.send({'t': 'launch', 'k': 'cmd'}); // not on the list: must be ignored
+    await waitFor((e) => e['event'] == 'input' && e['op'] == 'win' && e['a'] == 'close' && e['id'] == 4242);
+    await waitFor((e) => e['event'] == 'input' && e['op'] == 'launch' && e['k'] == 'notepad');
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    expect(events.where((e) => e['event'] == 'input' && e['op'] == 'launch' && e['k'] == 'cmd'), isEmpty);
     await c.close();
     await sub.cancel().timeout(const Duration(seconds: 2), onTimeout: () {});
   });

@@ -40,7 +40,7 @@ jobs:
         run: flutter analyze --no-fatal-infos
       - name: Dart unit tests (shared protocol vectors)
         working-directory: remotex/app
-        run: flutter test test/protocol_test.dart test/update_test.dart test/bluetooth_hid_test.dart
+        run: flutter test test/protocol_test.dart test/update_test.dart test/bluetooth_hid_test.dart test/windows_test.dart
       - name: Dart client vs real Python server
         working-directory: remotex/app
         env:

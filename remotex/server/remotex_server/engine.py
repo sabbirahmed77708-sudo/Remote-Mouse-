@@ -6,6 +6,7 @@ import time
 
 from . import protocol as P
 from .inputs import BUTTONS, MEDIA_VK, vk_for
+from .windows_api import LAUNCH_APPS, MAX_WINDOWS, WINDOW_ACTIONS
 
 
 def _int(value, lo, hi, default=0):
@@ -62,6 +63,21 @@ def dispatch(controller, msg):
         k = msg.get("k")
         if k in MEDIA_VK:
             controller.media(k)
+    elif t == "windows":
+        front, items = controller.list_windows()
+        return {"t": "windows", "fg": front, "items": items[:MAX_WINDOWS]}
+    elif t == "icon":
+        k = msg.get("k")
+        if isinstance(k, str) and 0 < len(k) <= 120:
+            return {"t": "icon", "k": k, "png": controller.window_icon(k)}
+    elif t == "win":
+        a, window_id = msg.get("a"), _int(msg.get("id"), 0, 2 ** 53)
+        if a in WINDOW_ACTIONS and window_id:
+            controller.window_action(a, window_id)
+    elif t == "launch":
+        k = msg.get("k")
+        if isinstance(k, str) and k in LAUNCH_APPS:
+            controller.launch(k)
     elif t == "ping":
         return {"t": "pong", "ts": _int(msg.get("ts"), 0, 2 ** 53)}
     return None
