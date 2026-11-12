@@ -108,7 +108,7 @@ class _ShellState extends State<Shell> {
     ];
     return Scaffold(
       body: SafeArea(child: IndexedStack(index: _index, children: pages)),
-      bottomNavigationBar: NavigationBar(
+      bottomNavigationBar: _index == 1 ? null : NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (i) {
           AppScope.read(context).app.haptic();

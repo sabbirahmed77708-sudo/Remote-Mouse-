@@ -35,6 +35,7 @@ class _TouchpadScreenState extends State<TouchpadScreen> {
   int _maxPointers = 0;
   bool _dragging = false;
   final Set<String> _mods = {};
+  bool _fill = true; // desktop picture fills the whole pad (cropped) or fits inside it
   bool _preview = true; // user switch for the live PC screen
 
   double _accX = 0, _accY = 0, _accSX = 0, _accSY = 0;
@@ -59,7 +60,7 @@ class _TouchpadScreenState extends State<TouchpadScreen> {
   void _syncPreview() {
     final conn = _scope?.conn;
     if (conn == null) return;
-    conn.watchScreen(widget.active && _preview, width: 640);
+    conn.watchScreen(widget.active && _preview, width: 960);
   }
 
   @override
@@ -355,42 +356,44 @@ class _TouchpadScreenState extends State<TouchpadScreen> {
       child: ListenableBuilder(
         listenable: conn,
         builder: (context, _) {
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
-            child: Column(
-              children: [
-                _topBar(conn),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: Row(
-                    children: [
-                      Expanded(child: _buildPad(conn.connected)),
-                      const SizedBox(width: 8),
-                      _buildScrollStrip(),
-                    ],
-                  ),
+          return Column(
+            children: [
+              // Full-bleed desktop view with the top bar and scroll strip floating over it
+              Expanded(
+                child: Stack(
+                  children: [
+                    Positioned.fill(child: _buildPad(conn.connected)),
+                    Positioned(top: 0, left: 0, right: 0, child: _topBar(conn)),
+                    Positioned(right: 8, top: 72, bottom: 16, child: _buildScrollStrip()),
+                  ],
                 ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  height: 54,
-                  child: Row(
-                    children: [
-                      Expanded(flex: 5, child: _mouseButton('left', 'Left')),
-                      const SizedBox(width: 8),
-                      Expanded(flex: 2, child: _mouseButton('middle', 'Mid', compact: true)),
-                      const SizedBox(width: 8),
-                      Expanded(flex: 5, child: _mouseButton('right', 'Right')),
-                    ],
-                  ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                child: Column(
+                  children: [
+                    SizedBox(
+                      height: 54,
+                      child: Row(
+                        children: [
+                          Expanded(flex: 5, child: _mouseButton('left', 'Left')),
+                          const SizedBox(width: 8),
+                          Expanded(flex: 2, child: _mouseButton('middle', 'Mid', compact: true)),
+                          const SizedBox(width: 8),
+                          Expanded(flex: 5, child: _mouseButton('right', 'Right')),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _toolbar(),
+                    const SizedBox(height: 6),
+                    _modifierRow(),
+                    const SizedBox(height: 6),
+                    _dock(),
+                  ],
                 ),
-                const SizedBox(height: 8),
-                _toolbar(),
-                const SizedBox(height: 6),
-                _modifierRow(),
-                const SizedBox(height: 6),
-                _dock(),
-              ],
-            ),
+              ),
+            ],
           );
         },
       ),
@@ -399,8 +402,16 @@ class _TouchpadScreenState extends State<TouchpadScreen> {
 
   Widget _topBar(ConnectionController conn) {
     final style = LinkStyle.of(conn);
-    return SizedBox(
-      height: 48,
+    return Container(
+      height: 64,
+      padding: const EdgeInsets.only(top: 4, right: 4),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xCC000000), Color(0x00000000)],
+        ),
+      ),
       child: Row(
         children: [
           IconButton(
@@ -442,6 +453,12 @@ class _TouchpadScreenState extends State<TouchpadScreen> {
           ),
           if (conn.connected && !conn.viaBluetooth)
             IconButton(
+              tooltip: _fill ? 'Show whole screen' : 'Fill the pad',
+              onPressed: () => setState(() => _fill = !_fill),
+              icon: Icon(_fill ? Icons.fit_screen_rounded : Icons.fullscreen_rounded, color: Colors.white70),
+            ),
+          if (conn.connected && !conn.viaBluetooth)
+            IconButton(
               tooltip: _preview ? 'Hide PC screen' : 'Show PC screen',
               onPressed: () {
                 setState(() => _preview = !_preview);
@@ -459,7 +476,7 @@ class _TouchpadScreenState extends State<TouchpadScreen> {
 
   Widget _buildPad(bool connected) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.zero,
       child: Stack(
         children: [
           Listener(
@@ -485,7 +502,7 @@ class _TouchpadScreenState extends State<TouchpadScreen> {
                         if (frame != null) {
                           return Positioned.fill(
                             child: IgnorePointer(
-                              child: Image.memory(frame, fit: BoxFit.contain, gaplessPlayback: true, filterQuality: FilterQuality.low),
+                              child: Image.memory(frame, fit: _fill ? BoxFit.cover : BoxFit.contain, gaplessPlayback: true, filterQuality: FilterQuality.low),
                             ),
                           );
                         }
@@ -559,14 +576,14 @@ class _TouchpadScreenState extends State<TouchpadScreen> {
 
   Widget _buildScrollStrip() {
     return SizedBox(
-      width: 44,
+      width: 38,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(19),
         child: Listener(
           behavior: HitTestBehavior.opaque,
           onPointerMove: _stripMove,
           child: const ColoredBox(
-            color: _Ui.panel,
+            color: Color(0x8C171D28),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
