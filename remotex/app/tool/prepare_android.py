@@ -66,6 +66,26 @@ def patch_signing():
     write(p, s)
 
 
+def patch_lint():
+    """Android lint's release check crashes inside some plugins (tool bug, not our code): turn it off."""
+    for name in ("build.gradle.kts", "build.gradle"):
+        p = os.path.join(ANDROID, name)
+        if not os.path.exists(p):
+            continue
+        s = read(p)
+        if "lintVital" in s:
+            return
+        if name.endswith(".kts"):
+            s += ('\nsubprojects {\n    tasks.configureEach {\n'
+                  '        if (name.startsWith("lintVital") || name == "lintAnalyzeRelease") { enabled = false }\n    }\n}\n')
+        else:
+            s += ('\nsubprojects {\n    tasks.configureEach { t ->\n'
+                  '        if (t.name.startsWith("lintVital") || t.name == "lintAnalyzeRelease") { t.enabled = false }\n    }\n}\n')
+        write(p, s)
+        return
+    sys.exit("no android/build.gradle(.kts) found")
+
+
 def patch_gradle():
     for name in ("build.gradle.kts", "build.gradle"):
         p = os.path.join(ANDROID, "app", name)
@@ -158,6 +178,7 @@ if __name__ == "__main__":
     create()
     drop_template_test()
     patch_gradle()
+    patch_lint()
     patch_signing()
     patch_manifest()
     write_main_activity()
