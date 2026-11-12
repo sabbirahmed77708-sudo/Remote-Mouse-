@@ -25,17 +25,17 @@ class Tray:
             post({"event": "ui_quit"})
 
         menu = pystray.Menu(
-            pystray.MenuItem("Open RemoteX Server", open_window, default=True),
+            pystray.MenuItem("Open Remote Mouse Server", open_window, default=True),
             pystray.MenuItem("Quit", quit_app),
         )
-        self._icon = pystray.Icon("RemoteX", image, "RemoteX Server - %s" % name, menu)
+        self._icon = pystray.Icon("RemoteMouse", image, "Remote Mouse Server - %s" % name, menu)
         self.running = False
 
     def start(self):
         self._icon.run_detached()
         self.running = True
 
-    def notify(self, text, title="RemoteX Server"):
+    def notify(self, text, title="Remote Mouse Server"):
         try:
             self._icon.notify(text, title)
         except Exception:

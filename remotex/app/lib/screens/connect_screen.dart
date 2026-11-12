@@ -123,7 +123,7 @@ class _NearbyTabState extends State<_NearbyTab> {
                 padding: const EdgeInsets.all(16),
                 children: [
                   Text(
-                    'PCs on this Wi-Fi that are running RemoteX Server appear here.',
+                    'PCs on this Wi-Fi that are running Remote Mouse Server appear here.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
                   ),
                   const SizedBox(height: 12),
@@ -151,7 +151,7 @@ class _NearbyTabState extends State<_NearbyTab> {
                           const Text('No PC found', textAlign: TextAlign.center),
                           const SizedBox(height: 6),
                           Text(
-                            'Check that the phone and PC use the same Wi-Fi, RemoteX Server is open, '
+                            'Check that the phone and PC use the same Wi-Fi, Remote Mouse Server is open, '
                             'and Windows Firewall allowed it on Private networks. '
                             'Some routers block discovery - use the QR code or Manual tab instead.',
                             textAlign: TextAlign.center,
@@ -208,7 +208,7 @@ class _QrTabState extends State<_QrTab> {
       if (raw == null) continue;
       final link = PairingLink.parse(raw);
       if (link == null) {
-        setState(() => _hint = 'That QR code is not a RemoteX pairing code.');
+        setState(() => _hint = 'That QR code is not a Remote Mouse pairing code.');
         continue;
       }
       _handled = true;
@@ -257,7 +257,7 @@ class _QrTabState extends State<_QrTab> {
         Padding(
           padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
           child: Text(
-            _hint ?? 'Open RemoteX Server on your PC and point the camera at the QR code.',
+            _hint ?? 'Open Remote Mouse Server on your PC and point the camera at the QR code.',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: _hint == null ? cs.onSurfaceVariant : cs.error),
           ),
@@ -296,7 +296,7 @@ class _ManualTabState extends State<_ManualTab> {
     final code = normalizeCode(_code.text);
     String? problem;
     if (host.isEmpty) {
-      problem = 'Enter the PC address shown in RemoteX Server.';
+      problem = 'Enter the PC address shown in Remote Mouse Server.';
     } else if (port == null || port < 1 || port > 65535) {
       problem = 'The port must be a number from 1 to 65535.';
     } else if (code.length != 12) {
@@ -321,7 +321,7 @@ class _ManualTabState extends State<_ManualTab> {
           padding: const EdgeInsets.all(16),
           children: [
             Text(
-              'Type the address and pairing code that RemoteX Server shows on your PC.',
+              'Type the address and pairing code that Remote Mouse Server shows on your PC.',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
             ),
             const SizedBox(height: 16),

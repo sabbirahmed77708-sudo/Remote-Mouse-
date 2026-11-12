@@ -66,30 +66,39 @@ jobs:
           Stop-Process -Id $p.Id -Force
       - name: Build the installer (Inno Setup)
         working-directory: remotex/server
-        shell: cmd
+        shell: pwsh
         run: |
-          where iscc || choco install innosetup -y --no-progress
-          iscc installer.iss || "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" installer.iss
-      - name: Silent install test (installs, checks files + firewall rule, uninstalls)
+          $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          $v = (python -c "import remotex_server;print(remotex_server.__version__)")
+          & $iscc "/DAppVersion=$v" installer.iss
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path dist\Remote-Mouse-Setup.exe)) { throw "installer not built" }
+      - name: Silent install test (files, shortcut, firewall rule, uninstall)
         working-directory: remotex/server
         shell: pwsh
         run: |
-          Start-Process dist\RemoteX-Server-Setup.exe -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/TASKS=desktopicon" -Wait
-          $exe = "$env:ProgramFiles\RemoteX Server\RemoteXServer.exe"
+          $p = Start-Process dist\Remote-Mouse-Setup.exe -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/TASKS=desktopicon" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "installer exit code $($p.ExitCode)" }
+          $dir = "$env:ProgramFiles\Remote Mouse"
+          $exe = "$dir\RemoteXServer.exe"
           if (-not (Test-Path $exe)) { throw "not installed" }
-          netsh advfirewall firewall show rule name="RemoteX Server" | Out-String | Write-Host
+          if (-not (Test-Path "$env:PUBLIC\Desktop\Remote Mouse.lnk")) { throw "desktop shortcut missing" }
+          $fw = netsh advfirewall firewall show rule name="Remote Mouse Server" | Out-String
+          if ($fw -notmatch "Remote Mouse Server") { throw "firewall rule missing" }
+          Write-Host "install OK (exe, desktop shortcut, firewall rule)"
           Get-Process RemoteXServer -ErrorAction SilentlyContinue | Stop-Process -Force
-          $u = Get-ChildItem "$env:ProgramFiles\RemoteX Server" -Filter unins*.exe | Select-Object -First 1
+          $u = Get-ChildItem $dir -Filter unins*.exe | Select-Object -First 1
           Start-Process $u.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES" -Wait
           Start-Sleep 2
           if (Test-Path $exe) { throw "uninstall left files" }
-          Write-Host "install + uninstall OK"
+          Write-Host "uninstall OK"
       - uses: actions/upload-artifact@v4
         with:
           name: RemoteXServer-windows
           path: |
             remotex/server/dist/RemoteXServer.exe
-            remotex/server/dist/RemoteX-Server-Setup.exe
+            remotex/server/dist/Remote-Mouse-Setup.exe
       - name: Release tag name
         id: rel
         shell: bash
@@ -99,8 +108,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.rel.outputs.tag }}
-          name: RemoteX ${{ steps.rel.outputs.tag }}
+          name: Remote Mouse ${{ steps.rel.outputs.tag }}
           target_commitish: ${{ github.sha }}
           files: |
             remotex/server/dist/RemoteXServer.exe
-            remotex/server/dist/RemoteX-Server-Setup.exe
+            remotex/server/dist/Remote-Mouse-Setup.exe

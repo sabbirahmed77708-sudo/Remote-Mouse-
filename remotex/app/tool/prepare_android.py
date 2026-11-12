@@ -83,7 +83,7 @@ def patch_gradle():
 
 def patch_manifest():
     s = read(MANIFEST)
-    s = re.sub(r'android:label="[^"]*"', 'android:label="RemoteX"', s, count=1)
+    s = re.sub(r'android:label="[^"]*"', 'android:label="Remote Mouse"', s, count=1)
     if "android.permission.INTERNET" not in s:
         perms = (
             '    <uses-permission android:name="android.permission.INTERNET"/>\n'
@@ -122,28 +122,31 @@ def icons():
     write(os.path.join(RES, "values", "ic_launcher_background.xml"),
           '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n'
           '    <color name="ic_launcher_background">#0F1115</color>\n</resources>\n')
+    write(os.path.join(RES, "drawable", "ic_launcher_bg.xml"),
+          '''<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient android:type="linear" android:angle="315"
+        android:startColor="#3B82F6" android:endColor="#6366F1"/>
+</shape>
+''')
     write(os.path.join(RES, "drawable", "ic_launcher_foreground.xml"),
           '''<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <group android:pivotX="54" android:pivotY="54" android:rotation="45">
-        <path android:pathData="M43,32 L65,32 A11,11 0 0 1 76,43 L76,65 A11,11 0 0 1 65,76 L43,76 A11,11 0 0 1 32,65 L32,43 A11,11 0 0 1 43,32 Z">
-            <aapt:attr name="android:fillColor">
-                <gradient android:type="linear" android:startX="32" android:startY="32"
-                    android:endX="76" android:endY="76"
-                    android:startColor="#4F8CFF" android:endColor="#965AFF"/>
-            </aapt:attr>
-        </path>
-    </group>
     <path android:fillColor="#FFFFFF"
-        android:pathData="M45,41 L45,67 L51,61.5 L55,70 L59,68 L55,59.5 L63,59.5 Z"/>
+        android:pathData="M38,40 A16,16 0 0 1 70,40 L70,68 A16,16 0 0 1 38,68 Z"/>
+    <path android:fillColor="#4F74F4"
+        android:pathData="M38,50 L70,50 L70,52.2 L38,52.2 Z"/>
+    <path android:fillColor="#4F74F4"
+        android:pathData="M52.9,24.5 L55.1,24.5 L55.1,51 L52.9,51 Z"/>
+    <path android:fillColor="#4F74F4"
+        android:pathData="M51,35 A3,3 0 0 1 57,35 L57,41 A3,3 0 0 1 51,41 Z"/>
 </vector>
 ''')
     xml = ('<?xml version="1.0" encoding="utf-8"?>\n'
            '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
-           '    <background android:drawable="@color/ic_launcher_background"/>\n'
+           '    <background android:drawable="@drawable/ic_launcher_bg"/>\n'
            '    <foreground android:drawable="@drawable/ic_launcher_foreground"/>\n'
            '    <monochrome android:drawable="@drawable/ic_launcher_foreground"/>\n'
            '</adaptive-icon>\n')
@@ -159,4 +162,4 @@ if __name__ == "__main__":
     patch_manifest()
     write_main_activity()
     icons()
-    print("android/ is ready (minSdk 24, INTERNET + CAMERA + VIBRATE, RemoteX icon)")
+    print("android/ is ready (minSdk 24, INTERNET + CAMERA + VIBRATE, Remote Mouse icon)")

@@ -1,4 +1,4 @@
-# RemoteX
+# Remote Mouse (project name: RemoteX)
 
 Use an Android phone as a mouse, keyboard and media remote for a Windows PC over the same Wi-Fi.
 
@@ -8,14 +8,14 @@ Use an Android phone as a mouse, keyboard and media remote for a Windows PC over
 
 ## Get the apps (no build tools needed)
 GitHub → **Actions** tab → open the latest green run of
-- **RemoteX app (analyze, test, APK)** → artifact `RemoteX-apk` → `RemoteX-arm64.apk` (almost every phone; `arm32` for very old phones, `x86_64` for emulators)
+- **RemoteX app (analyze, test, APK)** → artifact `RemoteX-apk` → `Remote-Mouse-arm64.apk` (almost every phone; `arm32` for very old phones, `x86_64` for emulators)
 - **RemoteX server (tests + Windows EXE)** → artifact `RemoteXServer-windows` → `RemoteXServer.exe`
 
 (Artifacts are zip files; unzip first. Push a tag `remotex-v1.0.0` to also get them attached to a GitHub Release.)
 The APK is signed with the Flutter debug key, so Android will ask you to allow installs from unknown sources.
 
 ## Use
-1. On the PC run `RemoteX-Server-Setup.exe` once (it adds a firewall rule and starts RemoteX quietly in the background: only a tray icon near the clock, no window).
+1. On the PC run `Remote-Mouse-Setup.exe` once (it adds a firewall rule and starts RemoteX quietly in the background: only a tray icon near the clock, no window).
 2. Open RemoteX on the phone (same Wi-Fi) → **Connect to a PC** → **Nearby** → tap your PC.
 3. First time the PC shows **Allow this phone?** with a 6-digit number; press Allow if the phone shows the same number. (QR code and typed code still work: double-click the tray icon to see them.)
 4. Next time the phone reconnects by itself (also after Wi-Fi drops).

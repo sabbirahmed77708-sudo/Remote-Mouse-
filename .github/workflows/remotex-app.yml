@@ -57,14 +57,14 @@ jobs:
       - name: Name the APKs
         working-directory: remotex/app/build/app/outputs/flutter-apk
         run: |
-          mv app-arm64-v8a-release.apk RemoteX-arm64.apk
-          mv app-armeabi-v7a-release.apk RemoteX-arm32.apk
-          mv app-x86_64-release.apk RemoteX-x86_64.apk
+          mv app-arm64-v8a-release.apk Remote-Mouse-arm64.apk
+          mv app-armeabi-v7a-release.apk Remote-Mouse-arm32.apk
+          mv app-x86_64-release.apk Remote-Mouse-x86_64.apk
           ls -la *.apk
       - uses: actions/upload-artifact@v4
         with:
           name: RemoteX-apk
-          path: remotex/app/build/app/outputs/flutter-apk/RemoteX-*.apk
+          path: remotex/app/build/app/outputs/flutter-apk/Remote-Mouse-*.apk
       - uses: actions/upload-artifact@v4
         with:
           name: android-scaffold
@@ -78,6 +78,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.rel.outputs.tag }}
-          name: RemoteX ${{ steps.rel.outputs.tag }}
+          name: Remote Mouse ${{ steps.rel.outputs.tag }}
           target_commitish: ${{ github.sha }}
-          files: remotex/app/build/app/outputs/flutter-apk/RemoteX-*.apk
+          files: remotex/app/build/app/outputs/flutter-apk/Remote-Mouse-*.apk

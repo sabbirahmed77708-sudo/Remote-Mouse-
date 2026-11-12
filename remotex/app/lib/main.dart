@@ -66,7 +66,7 @@ class _RemoteXAppState extends State<RemoteXApp> with WidgetsBindingObserver {
       child: ListenableBuilder(
         listenable: widget.app,
         builder: (context, _) => MaterialApp(
-          title: 'RemoteX',
+          title: 'Remote Mouse',
           debugShowCheckedModeBanner: false,
           themeMode: widget.app.themeMode,
           theme: _theme(Brightness.light),

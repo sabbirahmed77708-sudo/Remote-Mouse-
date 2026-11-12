@@ -97,7 +97,7 @@ class SettingsScreen extends StatelessWidget {
                   ListTile(
                     leading: const Icon(Icons.smartphone_rounded),
                     title: const Text('This phone\'s name'),
-                    subtitle: Text('${app.deviceName}  -  shown in RemoteX Server on the PC'),
+                    subtitle: Text('${app.deviceName}  -  shown in Remote Mouse Server on the PC'),
                     onTap: () => _editName(context),
                   ),
                   const Divider(height: 1),
@@ -276,7 +276,7 @@ class _AboutCardState extends State<_AboutCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('RemoteX', style: text.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                    Text('Remote Mouse', style: text.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
                     Text('Version $kAppVersion', style: text.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
                   ],
                 ),

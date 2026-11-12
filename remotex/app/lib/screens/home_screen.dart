@@ -30,7 +30,7 @@ class HomeScreen extends StatelessWidget {
               children: [
                 const LogoMark(size: 48),
                 const SizedBox(width: 12),
-                Text('RemoteX', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
+                Text('Remote Mouse', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
               ],
             ),
             const SizedBox(height: 18),
@@ -107,7 +107,7 @@ class _ConnectionCard extends StatelessWidget {
           Text(
             connected
                 ? '${conn.pc?.host ?? ''}${conn.latencyMs != null ? '  -  ${conn.latencyMs} ms' : ''}'
-                : (conn.error ?? 'Open RemoteX Server on your PC, then connect.'),
+                : (conn.error ?? 'Open Remote Mouse Server on your PC, then connect.'),
             style: text.bodyMedium?.copyWith(
               color: connected
                   ? cs.onPrimary.withValues(alpha: 0.85)
@@ -191,7 +191,7 @@ class _EmptyCard extends StatelessWidget {
             Icon(Icons.qr_code_scanner_rounded, size: 34, color: cs.primary),
             const SizedBox(width: 16),
             Expanded(
-              child: Text('No PCs yet. Pair one by scanning the QR code in RemoteX Server.',
+              child: Text('No PCs yet. Pair one by scanning the QR code in Remote Mouse Server.',
                   style: Theme.of(context).textTheme.bodyMedium),
             ),
             TextButton(onPressed: onConnect, child: const Text('Pair')),
@@ -294,7 +294,7 @@ class _PcSetupCard extends StatelessWidget {
             Text(
               'This phone app is the only app you use. Your PC just needs a small helper installed once; '
               'it runs quietly in the background and asks you to press Allow. On the PC open this link and '
-              'download "RemoteX-Server-Setup.exe":',
+              'download "Remote-Mouse-Setup.exe":',
               style: text.bodyMedium?.copyWith(color: cs.onPrimaryContainer),
             ),
             const SizedBox(height: 10),

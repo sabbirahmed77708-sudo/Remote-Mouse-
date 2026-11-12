@@ -76,7 +76,7 @@ def main(argv=None):
     except TransportError as exc:
         msg = "Could not start on port %d: %s\nIs RemoteX Server already running?" % (args.port, exc)
         log.error(msg)
-        if not args.headless and not args.gui_selftest:
+        if not args.headless and not args.gui_selftest and not args.minimized:
             try:
                 from . import gui
                 if gui.ask_running_instance_to_open():

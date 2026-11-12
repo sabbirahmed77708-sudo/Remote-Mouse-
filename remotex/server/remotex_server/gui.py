@@ -35,7 +35,7 @@ class ServerWindow:
         self.toast_until = 0.0
         engine.subscribe(self.events.put)
 
-        root.title("RemoteX Server")
+        root.title("Remote Mouse Server")
         root.configure(bg=BG)
         root.geometry("900x600")
         root.minsize(820, 560)
@@ -81,7 +81,7 @@ class ServerWindow:
 
         head = tk.Frame(root, bg=BG)
         head.grid(row=0, column=0, sticky="ew", padx=24, pady=(20, 8))
-        ttk.Label(head, text="RemoteX Server", style="Title.TLabel").pack(side="left")
+        ttk.Label(head, text="Remote Mouse Server", style="Title.TLabel").pack(side="left")
         self.status_label = ttk.Label(head, text="", style="Status.TLabel")
         self.status_label.pack(side="right")
         self.dot = tk.Canvas(head, width=14, height=14, bg=BG, highlightthickness=0)
@@ -97,7 +97,7 @@ class ServerWindow:
         left = ttk.Frame(body, style="Card.TFrame", padding=20)
         left.grid(row=0, column=0, sticky="ns", padx=(0, 16))
         ttk.Label(left, text="Pair a phone", style="H.TLabel").pack(anchor="w")
-        ttk.Label(left, text="Open RemoteX on your phone and tap\nthis PC - or scan this code.", style="Muted.TLabel").pack(anchor="w", pady=(2, 12))
+        ttk.Label(left, text="Open Remote Mouse on your phone and tap\nthis PC - or scan this code.", style="Muted.TLabel").pack(anchor="w", pady=(2, 12))
         self.qr_canvas = tk.Canvas(left, width=260, height=260, bg="white", highlightthickness=0)
         self.qr_canvas.pack()
         self.code_label = ttk.Label(left, text="", style="Code.TLabel")
@@ -141,7 +141,7 @@ class ServerWindow:
         foot = tk.Frame(root, bg=BG)
         foot.grid(row=2, column=0, sticky="ew", padx=24, pady=(8, 16))
         self.auto_var = tk.BooleanVar(value=autostart.is_enabled())
-        chk = ttk.Checkbutton(foot, text="Start RemoteX Server when Windows starts", variable=self.auto_var, command=self._toggle_autostart)
+        chk = ttk.Checkbutton(foot, text="Start Remote Mouse Server when Windows starts", variable=self.auto_var, command=self._toggle_autostart)
         chk.configure(style="TCheckbutton")
         chk.pack(side="left")
         tk.Label(foot, text="Phone and PC must be on the same Wi-Fi.  v%s" % __version__, bg=BG, fg=MUTED).pack(side="right")
@@ -185,7 +185,7 @@ class ServerWindow:
 
     def _quit(self):
         if self.engine.connected_device_ids():
-            if not messagebox.askyesno("Quit RemoteX Server", "A phone is connected. Quit and disconnect it?"):
+            if not messagebox.askyesno("Quit Remote Mouse Server", "A phone is connected. Quit and disconnect it?"):
                 return
         if self.tray:
             self.tray.stop()
@@ -203,7 +203,7 @@ class ServerWindow:
     def _show_allow(self, ev):
         self._close_allow()
         top = tk.Toplevel(self.root)
-        top.title("RemoteX - Allow this phone?")
+        top.title("Remote Mouse - Allow this phone?")
         top.configure(bg=CARD)
         top.attributes("-topmost", True)
         top.resizable(False, False)
@@ -409,7 +409,7 @@ def run(engine, name, ips, port, minimized=False, selftest_ms=0, background=Fals
             if report:
                 report("tray=ok")
             if not selftest_ms:
-                window.tray.notify("Running in the background. Open the RemoteX app on your phone and tap this PC.")
+                window.tray.notify("Running in the background. Open the Remote Mouse app on your phone and tap this PC.")
             root.withdraw()
         except Exception as exc:  # no tray available: stay usable with a minimised window
             window.tray = None
