@@ -1127,38 +1127,25 @@ class _PcIcon extends StatelessWidget {
 
 /// A rounded app tile in the app's colour.
 class _AppIcon extends StatelessWidget {
-  const _AppIcon({required this.app, this.size = 44, this.dot = false});
+  const _AppIcon({required this.app});
 
   final _App app;
-  final double size;
-  final bool dot;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(size * 0.28),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [app.color, Color.lerp(app.color, Colors.black, 0.35)!],
-            ),
-          ),
-          child: Icon(app.icon, color: Colors.white, size: size * 0.55),
+    const size = 44.0;
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(size * 0.28),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [app.color, Color.lerp(app.color, Colors.black, 0.35)!],
         ),
-        if (dot)
-          Container(
-            margin: const EdgeInsets.only(top: 3),
-            width: 5,
-            height: 5,
-            decoration: const BoxDecoration(color: Colors.white54, shape: BoxShape.circle),
-          ),
-      ],
+      ),
+      child: Icon(app.icon, color: Colors.white, size: size * 0.55),
     );
   }
 }
