@@ -9,7 +9,7 @@ import socket
 import sys
 import time
 
-from . import __version__, certs, paths
+from . import __version__, certs, paths, winenv
 from . import protocol as P
 from .discovery import DiscoveryResponder, local_ips
 from .engine import Engine
@@ -17,6 +17,7 @@ from . import apps as apps_mod
 from . import screen as screen_mod
 from .inputs import DryRunInput, WindowsInput
 from .store import Store
+from .updater import Updater
 from .transport import Transport, TransportError
 
 
@@ -40,6 +41,7 @@ def _parse(argv):
     ap.add_argument("--dry-run-input", action="store_true", help="do not move the mouse; report input events (testing)")
     ap.add_argument("--json-events", action="store_true", help="print one JSON object per line for every event")
     ap.add_argument("--no-screen", action="store_true", help="never share the screen preview or the list of open windows with the phone")
+    ap.add_argument("--no-update", action="store_true", help="never look for or install a newer version by itself")
     ap.add_argument("--auto-approve-requests", action="store_true", help="TESTING ONLY: press Allow automatically")
     ap.add_argument("--gui-selftest", type=int, default=0, metavar="MS", help="open the window, close it after MS ms")
     return ap.parse_args(argv)
@@ -93,7 +95,7 @@ def main(argv=None):
                     return 0  # it is already running: just bring its window forward
             except Exception:
                 pass
-        if args.gui_selftest or not args.headless:
+        if (args.gui_selftest or not args.headless) and not args.minimized:
             try:
                 import tkinter
                 from tkinter import messagebox
@@ -104,6 +106,26 @@ def main(argv=None):
         else:
             print(msg, file=sys.stderr)
         return 1
+
+    updater = None
+
+    def set_auto_update(on):
+        store.set_setting("auto_update", bool(on))
+        if updater is not None:
+            updater.auto = bool(on)
+
+    hooks_ref = {}
+    if (not args.no_update and not args.gui_selftest and not args.dry_run_input and not args.headless
+            and platform.system() == "Windows" and getattr(sys, "frozen", False)):
+        def post(event):
+            fn = hooks_ref.get("post")
+            if fn:
+                fn(event)
+
+        updater = Updater(__version__, directory, busy=lambda: bool(engine.connected_device_ids()),
+                          elevated=winenv.is_admin, auto=bool(store.setting("auto_update", True)),
+                          on_change=lambda: post({"event": "update_ready", "version": updater.version}) if updater.ready else None,
+                          on_install=lambda: post({"event": "ui_force_quit"}))
 
     discovery = DiscoveryResponder(store.server_id, name, transport.port)
     discovery.start()
@@ -133,11 +155,24 @@ def main(argv=None):
                     with open(os.path.join(directory, "selftest.txt"), "a", encoding="utf-8") as f:
                         f.write(line + "\n")
 
+            hooks = hooks_ref
+            hooks.update({"admin": winenv.is_admin(),
+                     "phones": lambda: len(engine.connected_device_ids()),
+                     "sharing": lambda: transport.share_enabled,
+                     "set_sharing": lambda on: setattr(transport, "share_enabled", bool(on)),
+                     "auto_update": lambda: bool(store.setting("auto_update", True)),
+                     "set_auto_update": set_auto_update})
+            if updater is not None:
+                hooks["update_version"] = lambda: updater.version if updater.ready else None
+                hooks["install_update"] = updater.install
+                updater.start()
             return gui.run(engine, name, ips, transport.port, selftest_ms=args.gui_selftest,
-                           background=not args.window, report=report)
+                           background=not args.window, report=report, hooks=hooks)
     except KeyboardInterrupt:
         pass
     finally:
+        if updater is not None:
+            updater.stop()
         discovery.stop()
         transport.stop()
     return 0

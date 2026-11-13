@@ -302,7 +302,8 @@ class _PcSetupCard extends StatelessWidget {
             Text(
               'This phone app is the only app you use. Your PC just needs a small helper installed once; '
               'it runs quietly in the background and asks you to press Allow. On the PC open this link and '
-              'download "Remote-Mouse-Setup.exe". Copy the link and send it to your PC (message, email or cloud drive).',
+              'download "Remote-Mouse-Setup.exe". If Windows shows "Windows protected your PC", use the install command instead: '
+              'paste it into PowerShell on the PC and the warning does not appear.',
               style: text.bodyMedium?.copyWith(color: cs.onPrimaryContainer),
             ),
             const SizedBox(height: 10),
@@ -316,6 +317,16 @@ class _PcSetupCard extends StatelessWidget {
                   },
                   icon: const Icon(Icons.copy_rounded),
                   label: const Text('Copy link'),
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: () async {
+                    await Clipboard.setData(const ClipboardData(text: kPcInstallCommand));
+                    if (context.mounted) {
+                      showSnack(context, 'Command copied. On the PC open PowerShell, paste it and press Enter.');
+                    }
+                  },
+                  icon: const Icon(Icons.terminal_rounded),
+                  label: const Text('Copy install command'),
                 ),
               ],
             ),

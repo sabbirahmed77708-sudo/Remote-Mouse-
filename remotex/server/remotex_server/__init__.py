@@ -1,3 +1,3 @@
 """RemoteX Windows server: lets the RemoteX Android app control this PC over Wi-Fi."""
 
-__version__ = "1.6.4"
+__version__ = "1.7.0"

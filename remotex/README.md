@@ -49,3 +49,17 @@ Verified automatically on GitHub Actions (see the workflow runs):
 - Real mouse/keyboard/media input on Windows (the server was tested with input in dry-run mode; the Win32 `SendInput` code was not exercised).
 - The app on a real phone: touch feel, QR camera scan, haptics, UI layout, discovery on a real router (some routers block UDP broadcast – use QR/Manual then).
 - Windows Firewall prompt behaviour and start-with-Windows on a real PC.
+
+## The Windows "protected your PC" (SmartScreen) page
+
+Windows shows this for any program that is not signed with a paid publisher certificate. It is not a virus
+warning. Two ways around it:
+
+* **No certificate needed:** on the PC open PowerShell and run the one-line install command (the app has a
+  "Copy install command" button on the home page). A file downloaded that way has no "from the internet"
+  mark, so the page does not appear. Later updates are downloaded by the program itself, also without it.
+* **Sign the program (removes the page for good):** buy a code-signing certificate (or get free signing for open
+  source projects from SignPath Foundation, which needs an OSI-approved license in this repository), then add two
+  repository secrets: `WINDOWS_CERT_PFX_BASE64` (the .pfx file, base64) and `WINDOWS_CERT_PASSWORD`. The server
+  workflow then signs `RemoteXServer.exe` and `Remote-Mouse-Setup.exe` by itself. Windows still needs some
+  downloads before it trusts a new publisher (an "EV" certificate is trusted at once).

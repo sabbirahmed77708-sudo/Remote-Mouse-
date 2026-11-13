@@ -28,6 +28,8 @@ jobs:
 
   exe:
     runs-on: windows-latest
+    env:
+      HAS_CERT: ${{ secrets.WINDOWS_CERT_PFX_BASE64 != '' }}
     needs: test
     steps:
       - uses: actions/checkout@v4
@@ -69,6 +71,21 @@ jobs:
           if (-not $ssl.IsAuthenticated) { throw "TLS failed" }
           Write-Host "TLS handshake OK with the EXE"
           Stop-Process -Id $p.Id -Force
+      - name: Sign the program (only when a code-signing certificate is configured)
+        if: env.HAS_CERT == 'true'
+        working-directory: remotex/server
+        shell: pwsh
+        env:
+          CERT_B64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          CERT_PASS: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERT_B64))
+          $tool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1
+          if (-not $tool) { throw "signtool not found" }
+          & $tool.FullName sign /f $pfx /p $env:CERT_PASS /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /d "Remote Mouse" dist\RemoteXServer.exe
+          if ($LASTEXITCODE -ne 0) { throw "signing failed" }
+          Remove-Item $pfx -Force
       - name: Build the installer (Inno Setup)
         working-directory: remotex/server
         shell: pwsh
@@ -79,11 +96,26 @@ jobs:
           $v = (python -c "import remotex_server;print(remotex_server.__version__)")
           & $iscc "/DAppVersion=$v" installer.iss
           if ($LASTEXITCODE -ne 0 -or -not (Test-Path dist\Remote-Mouse-Setup.exe)) { throw "installer not built" }
+      - name: Sign the installer (only when a code-signing certificate is configured)
+        if: env.HAS_CERT == 'true'
+        working-directory: remotex/server
+        shell: pwsh
+        env:
+          CERT_B64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          CERT_PASS: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERT_B64))
+          $tool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1
+          if (-not $tool) { throw "signtool not found" }
+          & $tool.FullName sign /f $pfx /p $env:CERT_PASS /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /d "Remote Mouse" dist\Remote-Mouse-Setup.exe
+          if ($LASTEXITCODE -ne 0) { throw "signing failed" }
+          Remove-Item $pfx -Force
       - name: Silent install test (files, shortcut, firewall rule, uninstall)
         working-directory: remotex/server
         shell: pwsh
         run: |
-          $p = Start-Process dist\Remote-Mouse-Setup.exe -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/TASKS=desktopicon" -Wait -PassThru
+          $p = Start-Process dist\Remote-Mouse-Setup.exe -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/TASKS=desktopicon,startup" -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "installer exit code $($p.ExitCode)" }
           $dir = "$env:ProgramFiles\Remote Mouse"
           $exe = "$dir\RemoteXServer.exe"
@@ -91,12 +123,19 @@ jobs:
           if (-not (Test-Path "$env:PUBLIC\Desktop\Remote Mouse.lnk")) { throw "desktop shortcut missing" }
           $fw = netsh advfirewall firewall show rule name="Remote Mouse Server" | Out-String
           if ($fw -notmatch "Remote Mouse Server") { throw "firewall rule missing" }
-          Write-Host "install OK (exe, desktop shortcut, firewall rule)"
+          foreach ($n in @("Remote Mouse Server", "Remote Mouse Server (open)")) {
+            $t = Get-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue
+            if (-not $t) { throw "scheduled task missing: $n" }
+            if ([string]$t.Principal.RunLevel -ne "Highest") { throw "task $n does not run with the highest rights" }
+          }
+          if (@((Get-ScheduledTask -TaskName "Remote Mouse Server").Triggers).Count -lt 1) { throw "start-up trigger missing" }
+          Write-Host "install OK (exe, desktop shortcut, firewall rule, admin tasks with sign-in trigger)"
           Get-Process RemoteXServer -ErrorAction SilentlyContinue | Stop-Process -Force
           $u = Get-ChildItem $dir -Filter unins*.exe | Select-Object -First 1
           Start-Process $u.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES" -Wait
           Start-Sleep 2
           if (Test-Path $exe) { throw "uninstall left files" }
+          if (Get-ScheduledTask -TaskName "Remote Mouse Server*" -ErrorAction SilentlyContinue) { throw "uninstall left scheduled tasks" }
           Write-Host "uninstall OK"
       - uses: actions/upload-artifact@v4
         with:

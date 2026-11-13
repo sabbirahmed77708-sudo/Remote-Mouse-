@@ -49,6 +49,15 @@ class Store:
             self._server["name"] = name
             self._write(self._server_path, self._server)
 
+    def setting(self, key, default=None):
+        with self._lock:
+            return self._server.get("settings", {}).get(key, default)
+
+    def set_setting(self, key, value):
+        with self._lock:
+            self._server.setdefault("settings", {})[key] = value
+            self._write(self._server_path, self._server)
+
     # ---- devices ----
     def add_device(self, device_id, name, key_hex, ip):
         now = time.time()

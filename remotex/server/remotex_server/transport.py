@@ -23,6 +23,7 @@ class Transport:
         self.engine = engine
         self.screen = screen  # S.ScreenSource or None (preview disabled)
         self.apps = apps      # A.AppSource or None (window list disabled)
+        self.share_enabled = True  # the tray menu can switch screen and window sharing off
         self.ssl_context = ssl_context
         self.host = host
         self.port = port
@@ -97,10 +98,12 @@ class Transport:
         async def _frames(width, quality):
             while True:
                 t0 = loop.time()
-                try:
-                    data = await loop.run_in_executor(None, self.screen.grab, width, quality)
-                except Exception:
-                    data = None
+                data = None
+                if self.share_enabled:
+                    try:
+                        data = await loop.run_in_executor(None, self.screen.grab, width, quality)
+                    except Exception:
+                        data = None
                 if data:
                     await ws.send(data)
                 await asyncio.sleep(max(0.02, 0.11 - (loop.time() - t0)))
@@ -132,10 +135,10 @@ class Transport:
             if not isinstance(msg, dict):
                 return
             if msg.get("t") in ("apps", "focus", "closewin"):
-                if self.apps is not None:
+                if self.apps is not None and self.share_enabled:
                     asyncio.ensure_future(_apps_cmd(msg))
                 return
-            if self.screen is None or msg.get("t") != "screen":
+            if self.screen is None or not self.share_enabled or msg.get("t") != "screen":
                 return
             if stream["task"] is not None:
                 stream["task"].cancel()

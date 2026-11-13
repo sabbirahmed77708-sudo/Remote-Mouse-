@@ -346,6 +346,16 @@ class ServerWindow:
                     self.show()
                 elif kind == "ui_quit":
                     self._quit()
+                elif kind == "ui_force_quit":  # an update is being installed: leave at once
+                    if self.tray:
+                        self.tray.stop()
+                    self.root.destroy()
+                    return
+                elif kind == "update_ready":
+                    self._toast("Update %s is ready" % ev.get("version"))
+                    if self.tray:
+                        self.tray.notify("Version %s is ready. Right-click this icon and choose Install update."
+                                         % ev.get("version"))
                 elif kind == "paired":
                     self._toast("Paired with %s" % ev.get("name"))
                 elif kind == "rejected":
@@ -389,7 +399,7 @@ def ask_running_instance_to_open(port=P.WS_PORT - 2):
         return False
 
 
-def run(engine, name, ips, port, minimized=False, selftest_ms=0, background=False, report=None):
+def run(engine, name, ips, port, minimized=False, selftest_ms=0, background=False, report=None, hooks=None):
     """Open the window (or, with background=True, only a tray icon and the Allow prompts).
     With selftest_ms the program closes itself and the call returns 0."""
     try:
@@ -401,10 +411,12 @@ def run(engine, name, ips, port, minimized=False, selftest_ms=0, background=Fals
     window = ServerWindow(root, engine, name, ips, port, minimized=minimized and not selftest_ms and not background,
                           background=background)
     _listen_for_open(window, P.WS_PORT - 2)
+    if hooks is not None:
+        hooks["post"] = window.events.put
     if background:
         try:
             from .tray import Tray
-            window.tray = Tray(window.events.put, name)
+            window.tray = Tray(window.events.put, name, hooks)
             window.tray.start()
             if report:
                 report("tray=ok")
