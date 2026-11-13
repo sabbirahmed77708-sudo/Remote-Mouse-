@@ -26,15 +26,10 @@ CLOSE_REMOVED = 4003
 CLOSE_TIMEOUT = 4008
 
 _HEX32 = re.compile(r"^[0-9a-f]{32}$")
-_HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
 
 def is_hex32(value):
     return isinstance(value, str) and bool(_HEX32.match(value))
-
-
-def is_hex64(value):
-    return isinstance(value, str) and bool(_HEX64.match(value))
 
 
 def new_code():

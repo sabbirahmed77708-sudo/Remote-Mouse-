@@ -44,11 +44,6 @@ class Store:
     def display_name(self):
         return self._server.get("name")
 
-    def set_display_name(self, name):
-        with self._lock:
-            self._server["name"] = name
-            self._write(self._server_path, self._server)
-
     # ---- devices ----
     def add_device(self, device_id, name, key_hex, ip):
         now = time.time()
