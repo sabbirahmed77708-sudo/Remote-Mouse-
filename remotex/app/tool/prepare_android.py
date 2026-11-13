@@ -66,6 +66,23 @@ def patch_signing():
     write(p, s)
 
 
+def patch_minify():
+    """R8 shrinking renames/removes classes the camera (QR scanner) needs, and the camera then fails to start.
+    The app is small anyway (the Flutter engine is most of it), so the release build keeps all classes."""
+    p = os.path.join(ANDROID, "app", "build.gradle.kts")
+    s = read(p)
+    if "isMinifyEnabled" in s:
+        return
+    marker = 'signingConfig = if (System.getenv("RX_KEYSTORE")'
+    i = s.find(marker)
+    if i < 0:
+        sys.exit("cannot find the release signing line to add the minify setting")
+    j = s.index("\n", i)
+    indent = " " * (len(s[s.rfind("\n", 0, i) + 1:i]))
+    s = s[:j] + "\n" + indent + "isMinifyEnabled = false\n" + indent + "isShrinkResources = false" + s[j:]
+    write(p, s)
+
+
 def patch_lint():
     """Android lint's release check crashes inside some plugins (tool bug, not our code): turn it off."""
     for name in ("build.gradle.kts", "build.gradle"):
@@ -208,6 +225,7 @@ if __name__ == "__main__":
     patch_gradle()
     patch_lint()
     patch_signing()
+    patch_minify()
     patch_manifest()
     write_main_activity()
     update_support()
