@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
 import '../app_state.dart';
+import '../models/running_app.dart';
 import '../models/saved_pc.dart';
 import 'bluetooth_hid.dart';
 import 'discovery_service.dart';
@@ -38,6 +40,9 @@ class ConnectionController extends ChangeNotifier {
 
   /// Latest live-screen frame (JPEG) from the PC, or null. Updated up to ~10 times a second.
   final ValueNotifier<Uint8List?> screenFrame = ValueNotifier<Uint8List?>(null);
+  /// Open windows on the PC (refreshed with [refreshApps]) and their icons (PNG bytes by icon id).
+  final ValueNotifier<List<RunningApp>> apps = ValueNotifier<List<RunningApp>>(const []);
+  final Map<String, Uint8List> appIcons = {};
   bool _screenWanted = false;
   int _screenWidth = 640;
   StreamSubscription<Map<String, dynamic>>? _sub;
@@ -252,6 +257,10 @@ class ConnectionController extends ChangeNotifier {
 
   void _onMessage(RemoteXConnection conn, Map<String, dynamic> m) {
     if (conn != _conn) return;
+    if (m['t'] == 'apps') {
+      _onApps(m);
+      return;
+    }
     if (m['t'] == 'pong') {
       _lastPong = DateTime.now();
       final ts = m['ts'];
@@ -260,6 +269,23 @@ class ConnectionController extends ChangeNotifier {
         latencyMs = rtt < 0 ? 0 : rtt;
         notifyListeners();
       }
+    }
+  }
+
+  void _onApps(Map<String, dynamic> m) {
+    final icons = m['icons'];
+    if (icons is Map) {
+      icons.forEach((k, v) {
+        if (k is String && v is String) {
+          try {
+            appIcons[k] = base64Decode(v);
+          } catch (_) {}
+        }
+      });
+    }
+    final list = m['list'];
+    if (list is List) {
+      apps.value = [for (final e in list) if (RunningApp.tryParse(e) != null) RunningApp.tryParse(e)!];
     }
   }
 
@@ -281,6 +307,7 @@ class ConnectionController extends ChangeNotifier {
   void _onClosed(RemoteXConnection conn) {
     if (conn != _conn) return;
     screenFrame.value = null;
+    apps.value = const [];
     _heartbeat?.cancel();
     _heartbeat = null;
     unawaited(_sub?.cancel());
@@ -456,6 +483,23 @@ class ConnectionController extends ChangeNotifier {
     } catch (_) {}
   }
 
+  /// Asks the PC for its open windows (Wi-Fi only). The answer updates [apps].
+  void refreshApps() {
+    if (viaBluetooth) return;
+    final c = _conn;
+    if (c == null || state != LinkState.connected) return;
+    try {
+      c.send({'t': 'apps', 'have': appIcons.keys.toList()});
+    } catch (_) {}
+  }
+
+  /// Brings a listed window to the front / closes it.
+  void focusApp(int id) => _send({'t': 'focus', 'id': id});
+  void closeApp(int id) => _send({'t': 'closewin', 'id': id});
+
+  /// lock, sleep, restart, shutdown, signout or cancel (cancels a pending restart/shutdown).
+  void power(String action) => _send({'t': 'power', 'a': action});
+
   void move(int dx, int dy) => _send({'t': 'move', 'dx': dx, 'dy': dy});
   void click(String button, {int count = 1}) => _send({'t': 'click', 'b': button, 'n': count});
   void button(String button, bool down) => _send({'t': 'btn', 'b': button, 'd': down});
@@ -482,6 +526,7 @@ class ConnectionController extends ChangeNotifier {
     _conn = null;
     if (c != null) unawaited(c.close());
     screenFrame.dispose();
+    apps.dispose();
     bt.removeListener(_onBluetooth);
     bt.dispose();
     super.dispose();

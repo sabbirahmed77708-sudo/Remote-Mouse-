@@ -8,6 +8,7 @@ from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosed
 
 from . import protocol as P
+from . import apps as A
 from . import screen as S
 
 log = logging.getLogger("remotex.transport")
@@ -18,9 +19,10 @@ class TransportError(Exception):
 
 
 class Transport:
-    def __init__(self, engine, ssl_context, host="0.0.0.0", port=P.WS_PORT, screen=None):
+    def __init__(self, engine, ssl_context, host="0.0.0.0", port=P.WS_PORT, screen=None, apps=None):
         self.engine = engine
         self.screen = screen  # S.ScreenSource or None (preview disabled)
+        self.apps = apps      # A.AppSource or None (window list disabled)
         self.ssl_context = ssl_context
         self.host = host
         self.port = port
@@ -103,15 +105,37 @@ class Transport:
                     await ws.send(data)
                 await asyncio.sleep(max(0.02, 0.11 - (loop.time() - t0)))
 
+        async def _apps_cmd(msg):
+            t = msg.get("t")
+            try:
+                if t == "apps":
+                    data = await loop.run_in_executor(None, self.apps.list, A.clean_have(msg.get("have")))
+                    await ws.send(json.dumps(dict(data, t="apps"), separators=(",", ":")))
+                elif t in ("focus", "closewin"):
+                    wid = msg.get("id")
+                    if isinstance(wid, int) and not isinstance(wid, bool):
+                        fn = self.apps.focus if t == "focus" else self.apps.close
+                        await loop.run_in_executor(None, fn, wid)
+            except ConnectionClosed:
+                pass
+            except Exception:
+                log.debug("apps command failed", exc_info=True)
+
         def _screen_cmd(raw):
             # only authenticated sessions; a bad message simply does nothing
-            if self.screen is None or not session.ready or '"screen"' not in raw:
+            if not session.ready or not any(k in raw for k in ('"screen"', '"apps"', '"focus"', '"closewin"')):
                 return
             try:
                 msg = json.loads(raw)
             except ValueError:
                 return
-            if not isinstance(msg, dict) or msg.get("t") != "screen":
+            if not isinstance(msg, dict):
+                return
+            if msg.get("t") in ("apps", "focus", "closewin"):
+                if self.apps is not None:
+                    asyncio.ensure_future(_apps_cmd(msg))
+                return
+            if self.screen is None or msg.get("t") != "screen":
                 return
             if stream["task"] is not None:
                 stream["task"].cancel()

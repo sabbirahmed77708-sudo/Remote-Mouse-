@@ -51,6 +51,11 @@ jobs:
           Write-Host $r
           if ($r -notmatch "allow_dialog=ok") { throw "Allow dialog failed" }
           if ($r -notmatch "tray=ok") { throw "Tray icon failed" }
+      - name: Window list, icons and screen grab run on Windows (no crash)
+        working-directory: remotex/server
+        shell: pwsh
+        run: |
+          python -c "from remotex_server import apps, screen; import json; r = apps.WindowsApps().list(set()); json.dumps(r); print('windows:', len(r['list']), 'icons:', len(r['icons'])); b = screen.WindowsScreen().grab(640, 45); print('frame bytes:', None if b is None else len(b))"
       - name: Smoke test the EXE (TLS port answers, hello is sent)
         working-directory: remotex/server
         shell: pwsh

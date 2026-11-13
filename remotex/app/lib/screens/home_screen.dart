@@ -30,7 +30,14 @@ class HomeScreen extends StatelessWidget {
               children: [
                 const LogoMark(size: 48),
                 const SizedBox(width: 12),
-                Text('Remote Mouse', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
+                Expanded(
+                  child: Text('Remote Mouse', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
+                ),
+                IconButton(
+                  tooltip: 'Settings',
+                  onPressed: () => onNavigate(4),
+                  icon: const Icon(Icons.settings_rounded),
+                ),
               ],
             ),
             const SizedBox(height: 18),

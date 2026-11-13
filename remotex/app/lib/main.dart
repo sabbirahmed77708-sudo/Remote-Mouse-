@@ -4,10 +4,8 @@ import 'app_scope.dart';
 import 'app_state.dart';
 import 'screens/connect_screen.dart';
 import 'screens/home_screen.dart';
-import 'screens/keyboard_screen.dart';
-import 'screens/media_screen.dart';
 import 'screens/settings_screen.dart';
-import 'screens/touchpad_screen.dart';
+import 'screens/remote_screen.dart';
 import 'services/connection_controller.dart';
 import 'services/storage_service.dart';
 import 'services/update_service.dart';
@@ -83,6 +81,8 @@ class _RemoteXAppState extends State<RemoteXApp> with WidgetsBindingObserver {
   }
 }
 
+/// Two pages: the connection page (saved PCs, connect) and the remote. The remote opens by itself as
+/// soon as a PC is connected, and the back button returns to the connection page.
 class Shell extends StatefulWidget {
   const Shell({super.key});
 
@@ -91,36 +91,87 @@ class Shell extends StatefulWidget {
 }
 
 class _ShellState extends State<Shell> {
-  int _index = 0;
+  bool _remote = false;
+  RemotePanel _panel = RemotePanel.none;
+  bool _wasConnected = false;
+  ConnectionController? _conn;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_conn == null) {
+      final c = AppScope.read(context).conn;
+      _conn = c;
+      c.addListener(_onConn);
+      _wasConnected = c.connected;
+      _remote = c.connected;
+    }
+  }
+
+  @override
+  void dispose() {
+    _conn?.removeListener(_onConn);
+    super.dispose();
+  }
+
+  void _onConn() {
+    final c = _conn;
+    if (c == null || !mounted) return;
+    final now = c.connected;
+    if (now && !_wasConnected) {
+      setState(() {
+        _remote = true;
+        _panel = RemotePanel.none;
+      });
+    } else if (!now && _remote && !c.busy) {
+      setState(() => _remote = false); // connection lost for good: back to the connection page
+    }
+    _wasConnected = now;
+  }
 
   Future<void> _openConnect() async {
     await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => const ConnectScreen()));
   }
 
+  void _openSettings() {
+    Navigator.of(context).push<void>(MaterialPageRoute(
+      builder: (_) => Scaffold(appBar: AppBar(), body: const SafeArea(child: SettingsScreen())),
+    ));
+  }
+
+  /// The dashboard tiles: 1 = touchpad, 2 = keyboard, 3 = media, 4 = settings.
+  void _navigate(int i) {
+    if (i == 4) {
+      _openSettings();
+      return;
+    }
+    if (!(_conn?.connected ?? false)) {
+      _openConnect();
+      return;
+    }
+    setState(() {
+      _panel = i == 2 ? RemotePanel.keyboard : (i == 3 ? RemotePanel.media : RemotePanel.none);
+      _remote = true;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final pages = <Widget>[
-      HomeScreen(onNavigate: (i) => setState(() => _index = i), onConnect: _openConnect),
-      TouchpadScreen(onConnect: _openConnect, onBack: () => setState(() => _index = 0), active: _index == 1),
-      KeyboardScreen(onConnect: _openConnect),
-      MediaScreen(onConnect: _openConnect),
-      const SettingsScreen(),
-    ];
-    return Scaffold(
-      body: SafeArea(child: IndexedStack(index: _index, children: pages)),
-      bottomNavigationBar: _index == 1 ? null : NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (i) {
-          AppScope.read(context).app.haptic();
-          setState(() => _index = i);
-        },
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home_rounded), label: 'Home'),
-          NavigationDestination(icon: Icon(Icons.touch_app_outlined), selectedIcon: Icon(Icons.touch_app_rounded), label: 'Touchpad'),
-          NavigationDestination(icon: Icon(Icons.keyboard_outlined), selectedIcon: Icon(Icons.keyboard_rounded), label: 'Keyboard'),
-          NavigationDestination(icon: Icon(Icons.play_circle_outline_rounded), selectedIcon: Icon(Icons.play_circle_rounded), label: 'Media'),
-          NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings_rounded), label: 'Settings'),
-        ],
+    return PopScope(
+      canPop: !_remote,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) setState(() => _remote = false);
+      },
+      child: Scaffold(
+        body: SafeArea(
+          child: _remote
+              ? RemoteScreen(
+                  onConnect: _openConnect,
+                  onBack: () => setState(() => _remote = false),
+                  initialPanel: _panel,
+                )
+              : HomeScreen(onNavigate: _navigate, onConnect: _openConnect),
+        ),
       ),
     );
   }

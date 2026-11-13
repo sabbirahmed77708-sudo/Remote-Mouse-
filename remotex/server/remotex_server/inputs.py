@@ -18,6 +18,7 @@ MEDIA_VK = {"mute": 0xAD, "voldown": 0xAE, "volup": 0xAF, "next": 0xB0, "prev": 
 EXTENDED = {0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x2D, 0x2E, 0x5B,
             0xAD, 0xAE, 0xAF, 0xB0, 0xB1, 0xB2, 0xB3}
 BUTTONS = ("left", "right", "middle")
+POWER_ACTIONS = ("lock", "sleep", "restart", "shutdown", "signout", "cancel")
 
 
 def vk_for(name):
@@ -43,6 +44,7 @@ class InputController:
     def key(self, name, repeat=1): raise NotImplementedError
     def combo(self, names): raise NotImplementedError
     def media(self, name): raise NotImplementedError
+    def power(self, action): raise NotImplementedError
 
 
 class DryRunInput(InputController):
@@ -59,6 +61,7 @@ class DryRunInput(InputController):
     def key(self, name, repeat=1): self.log({"op": "key", "k": name, "n": repeat})
     def combo(self, names): self.log({"op": "combo", "k": list(names)})
     def media(self, name): self.log({"op": "media", "k": name})
+    def power(self, action): self.log({"op": "power", "a": action})
 
 
 # ---------------------------------------------------------------------------
@@ -185,3 +188,20 @@ class WindowsInput(InputController):
         vk = MEDIA_VK.get(name)
         if vk is not None:
             self._send([self._vk_input(vk, False), self._vk_input(vk, True)])
+
+    def power(self, action):
+        import subprocess
+        flags = 0x08000000  # CREATE_NO_WINDOW
+        if action == "lock":
+            ctypes.windll.user32.LockWorkStation()
+            return
+        commands = {
+            "sleep": ["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"],
+            "restart": ["shutdown", "/r", "/t", "10"],
+            "shutdown": ["shutdown", "/s", "/t", "10"],
+            "signout": ["shutdown", "/l"],
+            "cancel": ["shutdown", "/a"],
+        }
+        cmd = commands.get(action)
+        if cmd:
+            subprocess.Popen(cmd, creationflags=flags)

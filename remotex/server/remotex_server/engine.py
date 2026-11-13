@@ -5,7 +5,7 @@ import threading
 import time
 
 from . import protocol as P
-from .inputs import BUTTONS, MEDIA_VK, vk_for
+from .inputs import BUTTONS, MEDIA_VK, POWER_ACTIONS, vk_for
 
 
 def _int(value, lo, hi, default=0):
@@ -62,6 +62,10 @@ def dispatch(controller, msg):
         k = msg.get("k")
         if k in MEDIA_VK:
             controller.media(k)
+    elif t == "power":
+        a = msg.get("a")
+        if a in POWER_ACTIONS:
+            controller.power(a)
     elif t == "ping":
         return {"t": "pong", "ts": _int(msg.get("ts"), 0, 2 ** 53)}
     return None
