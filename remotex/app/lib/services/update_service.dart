@@ -7,7 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 /// Version of this build. Keep in sync with `version:` in pubspec.yaml.
-const String kAppVersion = '1.6.3';
+const String kAppVersion = '1.6.4';
 
 const String kRepo = 'sabbirahmed77708-sudo/remote-mouse-';
 const String kReleasesPage = 'https://github.com/$kRepo/releases';
@@ -36,8 +36,9 @@ class UpdateInfo {
 }
 
 class UpdateException implements Exception {
-  UpdateException(this.message);
+  UpdateException(this.message, {this.notFound = false});
   final String message;
+  final bool notFound;
   @override
   String toString() => message;
 }
@@ -112,29 +113,68 @@ UpdateInfo? parseRelease(Map<String, dynamic> json, {String current = kAppVersio
   );
 }
 
-/// Asks GitHub for the newest release of RemoteX. Needs internet (not the PC).
+/// Asks the release server for the newest version. Needs internet (not the PC).
+/// The detailed answer can be refused when many phones share one network address (rate limit);
+/// then the plain "latest" link is used instead, which has no such limit.
 Future<UpdateInfo> checkForUpdate({Duration timeout = const Duration(seconds: 10)}) async {
+  try {
+    return await _checkDetailed(timeout);
+  } on UpdateException catch (e) {
+    if (e.notFound) rethrow;
+  } catch (_) {
+    // fall through to the simple check
+  }
+  return _checkSimple(timeout);
+}
+
+Future<UpdateInfo> _checkDetailed(Duration timeout) async {
   final client = HttpClient()..connectionTimeout = timeout;
   try {
     final req = await client.getUrl(Uri.parse('https://api.github.com/repos/$kRepo/releases/latest'));
     req.headers.set('Accept', 'application/vnd.github+json');
-    req.headers.set('User-Agent', 'RemoteX-App');
+    req.headers.set('User-Agent', 'Remote-Mouse-App');
     final res = await req.close().timeout(timeout);
     final text = await res.transform(utf8.decoder).join().timeout(timeout);
-    if (res.statusCode == 404) throw UpdateException('No release has been published yet.');
-    if (res.statusCode != 200) throw UpdateException('GitHub answered ${res.statusCode}. Try again later.');
+    if (res.statusCode == 404) throw UpdateException('No release has been published yet.', notFound: true);
+    if (res.statusCode != 200) throw UpdateException('The update server answered ${res.statusCode}.');
     final json = jsonDecode(text);
     final info = json is Map<String, dynamic> ? parseRelease(json) : null;
     if (info == null) throw UpdateException('Could not read the release information.');
     return info;
+  } finally {
+    client.close(force: true);
+  }
+}
+
+/// Reads the newest version number from where the "latest" link leads to, and builds the APK link from it.
+Future<UpdateInfo> _checkSimple(Duration timeout, {String current = kAppVersion}) async {
+  final client = HttpClient()..connectionTimeout = timeout;
+  try {
+    final req = await client.getUrl(Uri.parse('https://github.com/$kRepo/releases/latest'));
+    req.followRedirects = false;
+    req.headers.set('User-Agent', 'Remote-Mouse-App');
+    final res = await req.close().timeout(timeout);
+    await res.drain<void>();
+    final where = res.headers.value('location') ?? '';
+    final m = RegExp(r'/releases/tag/([^/?#]+)$').firstMatch(where);
+    final v = m == null ? null : RegExp(r'(\d+\.\d+\.\d+)').firstMatch(m.group(1)!);
+    if (m == null || v == null) throw UpdateException('Could not check for updates right now. Try again later.');
+    final tag = m.group(1)!;
+    return UpdateInfo(
+      current: current,
+      latest: v.group(1)!,
+      apkUrl: 'https://github.com/$kRepo/releases/download/$tag/Remote-Mouse-arm64.apk',
+      pageUrl: kReleasesPage,
+      notes: '',
+    );
   } on UpdateException {
     rethrow;
   } on TimeoutException {
-    throw UpdateException('GitHub did not answer. Check your internet connection.');
+    throw UpdateException('The update server did not answer. Check your internet connection.');
   } on SocketException {
     throw UpdateException('No internet connection.');
   } on HandshakeException {
-    throw UpdateException('Secure connection to GitHub failed.');
+    throw UpdateException('Secure connection failed.');
   } catch (_) {
     throw UpdateException('Could not check for updates.');
   } finally {
