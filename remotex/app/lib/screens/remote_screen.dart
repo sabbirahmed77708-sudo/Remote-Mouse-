@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../app_scope.dart';
+import '../models/running_app.dart';
 import '../services/connection_controller.dart';
 import '../widgets/common.dart';
 
@@ -58,7 +59,13 @@ class _RemoteScreenState extends State<RemoteScreen> {
     super.didChangeDependencies();
     final first = _scope == null;
     _scope = AppScope.of(context);
-    if (first) WidgetsBinding.instance.addPostFrameCallback((_) => _syncPreview());
+    if (first) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _syncPreview();
+        _scope?.conn.refreshApps();
+        if (_panel == RemotePanel.keyboard && mounted) _kbFocus.requestFocus();
+      });
+    }
   }
 
   @override
@@ -66,6 +73,13 @@ class _RemoteScreenState extends State<RemoteScreen> {
     super.initState();
     // ~125 updates per second: smooth, and many touch events collapse into one message
     _flushTimer = Timer.periodic(const Duration(milliseconds: 8), (_) => _flush());
+    // the list of windows open on the PC: quickly while the Apps panel is open, now and then otherwise
+    _appsTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      _tick++;
+      final c = _scope?.conn;
+      if (c == null || !c.connected || !widget.active) return;
+      if (_panel == RemotePanel.apps || _tick % 3 == 0) c.refreshApps();
+    });
   }
 
   void _syncPreview() {
@@ -84,6 +98,8 @@ class _RemoteScreenState extends State<RemoteScreen> {
   void dispose() {
     _scope?.conn.watchScreen(false);
     _flushTimer?.cancel();
+    _appsTimer?.cancel();
+    _kbFocus.dispose();
     if (_dragging) _scope?.conn.button('left', false);
     _glow.dispose();
     _text.dispose();
@@ -180,7 +196,12 @@ class _RemoteScreenState extends State<RemoteScreen> {
   // ---------- state ----------
 
   late RemotePanel _panel = widget.initialPanel;
-  final List<_App> _opened = []; // apps started from this phone, newest last
+  Timer? _appsTimer;
+  int _tick = 0;
+  final FocusNode _kbFocus = FocusNode();
+  // The hidden typing field always holds these invisible characters, so that a Backspace on the
+  // phone keyboard is seen as a deletion even when nothing has been typed yet.
+  static final String _base = '\u200b' * 8;
 
   static const _modOrder = ['ctrl', 'alt', 'shift', 'win'];
 
@@ -214,18 +235,30 @@ class _RemoteScreenState extends State<RemoteScreen> {
     } else {
       unawaited(_run(a.command!));
     }
-    setState(() {
-      _opened.removeWhere((o) => o.id == a.id);
-      _opened.add(a);
-    });
+    // the new window needs a moment to appear in the list
+    for (final ms in const [1200, 3000]) {
+      Future<void>.delayed(Duration(milliseconds: ms), () {
+        if (mounted) _scope?.conn.refreshApps();
+      });
+    }
   }
 
   void _setPanel(RemotePanel p) {
     AppScope.read(context).app.haptic();
     setState(() => _panel = _panel == p ? RemotePanel.none : p);
+    if (_panel == RemotePanel.keyboard) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _kbFocus.requestFocus();
+        SystemChannels.textInput.invokeMethod<void>('TextInput.show');
+      });
+    } else {
+      _kbFocus.unfocus();
+    }
+    if (_panel == RemotePanel.apps) AppScope.read(context).conn.refreshApps();
   }
 
-  Future<void> _confirmPower(String title, String command) async {
+  Future<void> _confirmPower(String title, String action) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -239,7 +272,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
     );
     if (ok == true && mounted) {
       AppScope.read(context).app.haptic(strong: true);
-      unawaited(_run(command));
+      AppScope.read(context).conn.power(action);
     }
   }
 
@@ -328,7 +361,10 @@ class _RemoteScreenState extends State<RemoteScreen> {
 
   Widget _topBar(ConnectionController conn) {
     final style = LinkStyle.of(conn);
-    final current = _opened.isEmpty ? null : _opened.last;
+    RunningApp? current;
+    for (final a in conn.apps.value) {
+      if (a.foreground) current = a;
+    }
     return Container(
       height: 64,
       padding: const EdgeInsets.only(top: 4, right: 2),
@@ -381,7 +417,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
           if (current != null)
             Padding(
               padding: const EdgeInsets.only(right: 4),
-              child: _AppIcon(app: current, size: 30, dot: false),
+              child: _PcIcon(app: current, icons: conn.appIcons, size: 30),
             ),
           if (conn.connected && !conn.viaBluetooth) ...[
             IconButton(
@@ -602,7 +638,9 @@ class _RemoteScreenState extends State<RemoteScreen> {
 
   // ---------- panels ----------
 
-  final TextEditingController _text = TextEditingController();
+  late final TextEditingController _text = TextEditingController.fromValue(
+    TextEditingValue(text: _base, selection: TextSelection.collapsed(offset: _base.length)),
+  );
 
   Widget _panelBody(RemotePanel p) {
     switch (p) {
@@ -666,15 +704,43 @@ class _RemoteScreenState extends State<RemoteScreen> {
     });
   }
 
-  Widget _keyboardPanel() {
+  /// Whatever the phone keyboard does goes straight to the PC: typed characters are typed there,
+  /// Backspace deletes there, Enter presses Enter. No Send button.
+  void _liveText(String v) {
     final conn = AppScope.read(context).conn;
-    void send() {
-      final t = _text.text;
-      if (t.isEmpty) return;
-      conn.typeText(t);
-      _text.clear();
+    var p = 0;
+    final m = min(_base.length, v.length);
+    while (p < m && _base.codeUnitAt(p) == v.codeUnitAt(p)) {
+      p++;
+    }
+    final deleted = _base.length - p;
+    final added = v.substring(p);
+    // put the invisible padding back right away, so the next key is seen the same way
+    _text.value = TextEditingValue(text: _base, selection: TextSelection.collapsed(offset: _base.length));
+    if (deleted > 0) conn.key('backspace', count: deleted);
+    if (added.isEmpty) return;
+    if (_mods.isNotEmpty && added.runes.length == 1) {
+      _chord([added.toLowerCase()]); // e.g. Ctrl switched on, then C on the phone keyboard = Ctrl+C
+      return;
+    }
+    final buffer = StringBuffer();
+    void flush() {
+      if (buffer.isNotEmpty) conn.typeText(buffer.toString());
+      buffer.clear();
     }
 
+    for (final ch in added.characters) {
+      if (ch == '\n' || ch == '\r\n' || ch == '\r') {
+        flush();
+        conn.key('enter');
+      } else if (ch != '\u200b') {
+        buffer.write(ch);
+      }
+    }
+    flush();
+  }
+
+  Widget _keyboardPanel() {
     return Column(
       children: [
         SizedBox(
@@ -682,31 +748,45 @@ class _RemoteScreenState extends State<RemoteScreen> {
           child: Row(
             children: [
               Expanded(
-                child: TextField(
-                  controller: _text,
-                  style: const TextStyle(color: Colors.white),
-                  textInputAction: TextInputAction.send,
-                  onSubmitted: (_) => send(),
-                  decoration: InputDecoration(
-                    isDense: true,
-                    hintText: 'Type here and send to the PC',
-                    hintStyle: const TextStyle(color: _Ui.dim, fontSize: 14),
-                    filled: true,
-                    fillColor: _Ui.tile,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    _kbFocus.requestFocus();
+                    SystemChannels.textInput.invokeMethod<void>('TextInput.show');
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    decoration: BoxDecoration(color: _Ui.tile, borderRadius: BorderRadius.circular(14)),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.keyboard_alt_rounded, color: _Ui.accent, size: 20),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Text('Type on your phone keyboard, it types on the PC',
+                              maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white70, fontSize: 13)),
+                        ),
+                        // the real input field: one pixel, invisible, but it receives the phone keyboard
+                        SizedBox(
+                          width: 1,
+                          height: 1,
+                          child: TextField(
+                            controller: _text,
+                            focusNode: _kbFocus,
+                            autocorrect: false,
+                            enableSuggestions: false,
+                            enableInteractiveSelection: false,
+                            keyboardType: TextInputType.multiline,
+                            textInputAction: TextInputAction.newline,
+                            maxLines: null,
+                            style: const TextStyle(color: Colors.transparent, fontSize: 1),
+                            cursorColor: Colors.transparent,
+                            decoration: const InputDecoration(border: InputBorder.none, isCollapsed: true),
+                            onChanged: _liveText,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 48,
-                child: PressableTile(
-                  radius: 14,
-                  color: _Ui.accent,
-                  semanticLabel: 'Send text',
-                  onPress: send,
-                  child: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
                 ),
               ),
             ],
@@ -866,17 +946,16 @@ class _RemoteScreenState extends State<RemoteScreen> {
     );
   }
 
-  Widget _appTile(_App a, {required bool opened}) {
+  Widget _appTile(_App a) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => _launch(a),
-      onLongPress: opened ? () => setState(() => _opened.removeWhere((o) => o.id == a.id)) : null,
       child: SizedBox(
         width: 62,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _AppIcon(app: a, dot: opened),
+            _AppIcon(app: a),
             const SizedBox(height: 3),
             Text(a.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 10)),
           ],
@@ -885,7 +964,62 @@ class _RemoteScreenState extends State<RemoteScreen> {
     );
   }
 
+  /// A window that is open on the PC: its real icon, tap to bring it to the front, x to close it.
+  Widget _openTile(ConnectionController conn, RunningApp a) {
+    return SizedBox(
+      width: 66,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                AppScope.read(context).app.haptic();
+                conn.focusApp(a.id);
+                Future<void>.delayed(const Duration(milliseconds: 700), conn.refreshApps);
+              },
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: a.foreground ? _Ui.accent : Colors.transparent, width: 2),
+                    ),
+                    child: _PcIcon(app: a, icons: conn.appIcons, size: 38),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(a.title.isEmpty ? a.exe : a.title,
+                      maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 10)),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            top: 0,
+            right: 2,
+            child: GestureDetector(
+              onTap: () {
+                AppScope.read(context).app.haptic(strong: true);
+                conn.closeApp(a.id);
+                Future<void>.delayed(const Duration(milliseconds: 800), conn.refreshApps);
+              },
+              child: Container(
+                width: 20,
+                height: 20,
+                decoration: const BoxDecoration(color: Color(0xFFE5484D), shape: BoxShape.circle),
+                child: const Icon(Icons.close_rounded, size: 14, color: Colors.white),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _appsPanel() {
+    final conn = AppScope.read(context).conn;
     return Column(
       children: [
         SizedBox(
@@ -893,20 +1027,28 @@ class _RemoteScreenState extends State<RemoteScreen> {
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             itemCount: _apps.length,
-            itemBuilder: (_, i) => _appTile(_apps[i], opened: false),
+            itemBuilder: (_, i) => _appTile(_apps[i]),
           ),
         ),
         const Divider(height: 10, color: Color(0x22FFFFFF)),
         SizedBox(
           height: 70,
-          child: _opened.isEmpty
-              ? const Center(child: Text('Apps you open show up here  (hold to remove)', style: TextStyle(color: _Ui.dim, fontSize: 12)))
-              : ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  reverse: false,
-                  itemCount: _opened.length,
-                  itemBuilder: (_, i) => _appTile(_opened[_opened.length - 1 - i], opened: true),
-                ),
+          child: ValueListenableBuilder<List<RunningApp>>(
+            valueListenable: conn.apps,
+            builder: (context, list, _) {
+              if (list.isEmpty) {
+                return Center(
+                  child: Text(conn.viaBluetooth ? 'Open apps are not available over Bluetooth' : 'Nothing open on the PC',
+                      style: const TextStyle(color: _Ui.dim, fontSize: 12)),
+                );
+              }
+              return ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: list.length,
+                itemBuilder: (_, i) => _openTile(conn, list[i]),
+              );
+            },
+          ),
         ),
       ],
     );
@@ -918,12 +1060,12 @@ class _RemoteScreenState extends State<RemoteScreen> {
       children: [
         _big(Icons.lock_rounded, 'Lock', () {
           AppScope.read(context).app.haptic();
-          conn.combo(['win', 'l']);
+          conn.power('lock');
         }),
-        _big(Icons.bedtime_rounded, 'Sleep', () => _confirmPower('Sleep', 'rundll32.exe powrprof.dll,SetSuspendState 0,1,0'), color: const Color(0xFF8BD3FF)),
-        _big(Icons.logout_rounded, 'Sign out', () => _confirmPower('Sign out', 'shutdown /l'), color: const Color(0xFFF5C451)),
-        _big(Icons.restart_alt_rounded, 'Restart', () => _confirmPower('Restart', 'shutdown /r /t 0'), color: const Color(0xFFFF8A65)),
-        _big(Icons.power_settings_new_rounded, 'Shut down', () => _confirmPower('Shut down', 'shutdown /s /t 0'), color: const Color(0xFFFF5252)),
+        _big(Icons.bedtime_rounded, 'Sleep', () => _confirmPower('Sleep', 'sleep'), color: const Color(0xFF8BD3FF)),
+        _big(Icons.logout_rounded, 'Sign out', () => _confirmPower('Sign out', 'signout'), color: const Color(0xFFF5C451)),
+        _big(Icons.restart_alt_rounded, 'Restart', () => _confirmPower('Restart', 'restart'), color: const Color(0xFFFF8A65)),
+        _big(Icons.power_settings_new_rounded, 'Shut down', () => _confirmPower('Shut down', 'shutdown'), color: const Color(0xFFFF5252)),
       ],
     );
   }
@@ -957,7 +1099,33 @@ const List<_App> _apps = [
   _App('snip', 'Snip', Icons.screenshot_monitor_rounded, Color(0xFF26A69A), keys: ['win', 'shift', 's']),
 ];
 
-/// A rounded app tile in the app's colour; [dot] marks an app that is open.
+/// The real icon of a window open on the PC (sent by the server), or a letter tile until it arrives.
+class _PcIcon extends StatelessWidget {
+  const _PcIcon({required this.app, required this.icons, this.size = 40});
+
+  final RunningApp app;
+  final Map<String, Uint8List> icons;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final bytes = icons[app.iconId];
+    if (bytes != null) {
+      return Image.memory(bytes, width: size, height: size, gaplessPlayback: true, filterQuality: FilterQuality.medium);
+    }
+    final name = app.title.isNotEmpty ? app.title : app.exe;
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(color: _Ui.tile, borderRadius: BorderRadius.circular(size * 0.25)),
+      child: Text(name.isEmpty ? '?' : name.characters.first.toUpperCase(),
+          style: TextStyle(color: Colors.white, fontSize: size * 0.45, fontWeight: FontWeight.w700)),
+    );
+  }
+}
+
+/// A rounded app tile in the app's colour.
 class _AppIcon extends StatelessWidget {
   const _AppIcon({required this.app, this.size = 44, this.dot = false});
 
