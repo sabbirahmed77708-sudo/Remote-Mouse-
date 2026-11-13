@@ -27,6 +27,7 @@ class MainActivity : FlutterActivity() {
     private var channel: MethodChannel? = null
     private var hid: BtHid? = null
     private var pendingInit: MethodChannel.Result? = null
+    private var pendingCamera: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -77,6 +78,29 @@ class MainActivity : FlutterActivity() {
             "settings" -> {
                 try { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) } catch (e: Exception) { }
                 result.success(null)
+            }
+            "camera" -> {
+                if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                    result.success("granted")
+                } else {
+                    pendingCamera?.success("cancelled")
+                    pendingCamera = result
+                    requestPermissions(arrayOf(Manifest.permission.CAMERA), 78)
+                }
+            }
+            "appSettings" -> {
+                try {
+                    startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+                } catch (e: Exception) { }
+                result.success(null)
+            }
+            "openUrl" -> {
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(call.argument<String>("url") ?: "")))
+                    result.success(true)
+                } catch (e: Exception) {
+                    result.success(false)
+                }
             }
             else -> result.notImplemented()
         }
@@ -136,6 +160,13 @@ class MainActivity : FlutterActivity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 78) {
+            val c = pendingCamera ?: return
+            pendingCamera = null
+            val ok = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+            c.success(if (ok) "granted" else "denied")
+            return
+        }
         if (requestCode != 77) return
         val r = pendingInit ?: return
         pendingInit = null

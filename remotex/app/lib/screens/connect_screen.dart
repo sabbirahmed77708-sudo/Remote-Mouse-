@@ -5,6 +5,7 @@ import '../app_scope.dart';
 import '../models/saved_pc.dart';
 import '../services/connection_controller.dart';
 import '../services/discovery_service.dart';
+import '../services/native_bridge.dart';
 import '../services/remotex_client.dart';
 import '../widgets/common.dart';
 
@@ -187,13 +188,56 @@ class _QrTab extends StatefulWidget {
   State<_QrTab> createState() => _QrTabState();
 }
 
+enum _CamStage { starting, running, denied, error }
+
 class _QrTabState extends State<_QrTab> {
   final MobileScannerController _camera = MobileScannerController(
+    autoStart: false,
     detectionSpeed: DetectionSpeed.noDuplicates,
     formats: const [BarcodeFormat.qrCode],
   );
   bool _handled = false;
   String? _hint;
+  _CamStage _stage = _CamStage.starting;
+  String? _detail;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _boot());
+  }
+
+  /// Asks for the camera permission first, then starts the camera and says clearly what went wrong if it cannot.
+  Future<void> _boot() async {
+    if (!mounted) return;
+    setState(() {
+      _stage = _CamStage.starting;
+      _detail = null;
+    });
+    final perm = await NativeBridge.cameraPermission();
+    if (!mounted) return;
+    if (perm == 'denied') {
+      setState(() => _stage = _CamStage.denied);
+      return;
+    }
+    try {
+      await _camera.start();
+      if (mounted) setState(() => _stage = _CamStage.running);
+    } on MobileScannerException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _stage = e.errorCode == MobileScannerErrorCode.permissionDenied ? _CamStage.denied : _CamStage.error;
+        _detail = e.errorDetails?.message ?? e.errorDetails?.code;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _stage = _CamStage.error;
+          _detail = e.toString();
+        });
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -219,6 +263,34 @@ class _QrTabState extends State<_QrTab> {
     }
   }
 
+  Widget _camMessage(ColorScheme cs, String text, {String? detail, bool settings = false}) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.no_photography_rounded, size: 44, color: cs.error),
+            const SizedBox(height: 12),
+            Text(text, textAlign: TextAlign.center),
+            if (detail != null && detail.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(detail, textAlign: TextAlign.center, style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12)),
+            ],
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              children: [
+                FilledButton.tonal(onPressed: _boot, child: const Text('Try again')),
+                if (settings) FilledButton.tonal(onPressed: NativeBridge.appSettings, child: const Text('Open settings')),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -229,28 +301,21 @@ class _QrTabState extends State<_QrTab> {
             borderRadius: BorderRadius.circular(28),
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: MobileScanner(
-                controller: _camera,
-                onDetect: _onDetect,
-                errorBuilder: (context, error, _) => Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.no_photography_rounded, size: 44, color: cs.error),
-                        const SizedBox(height: 12),
-                        Text(
-                          error.errorCode == MobileScannerErrorCode.permissionDenied
-                              ? 'Camera permission was denied. Allow it in the phone settings, or use the Manual tab.'
-                              : 'The camera is not available. Use the Manual tab instead.',
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+              child: _stage == _CamStage.running
+                  ? MobileScanner(
+                      controller: _camera,
+                      onDetect: _onDetect,
+                      errorBuilder: (context, error, _) => _camMessage(
+                        cs,
+                        'The camera could not start.',
+                        detail: error.errorDetails?.message ?? error.errorDetails?.code,
+                      ),
+                    )
+                  : _stage == _CamStage.starting
+                      ? const Center(child: CircularProgressIndicator())
+                      : _stage == _CamStage.denied
+                          ? _camMessage(cs, 'Camera permission is off. Allow it for Remote Mouse, then try again, or use the Manual tab.', settings: true)
+                          : _camMessage(cs, 'The camera is not available. Try again, or use the Manual tab.', detail: _detail),
             ),
           ),
         ),

@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 
+import 'package:flutter/services.dart';
+
 import '../app_scope.dart';
+import '../services/native_bridge.dart';
 import '../services/update_service.dart';
 import '../widgets/common.dart';
 import '../widgets/logo.dart';
 import '../widgets/update_card.dart';
+
+const String _kSite = 'https://sdmapk.pages.dev/';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -281,6 +286,36 @@ class _AboutCard extends StatelessWidget {
                   label: Text(s == UpdateStage.checking ? 'Checking...' : 'Check for updates'),
                 ),
               ],
+              const Divider(height: 28),
+              InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () async {
+                  final ok = await NativeBridge.openUrl(_kSite);
+                  if (!ok && context.mounted) {
+                    await Clipboard.setData(const ClipboardData(text: _kSite));
+                    if (context.mounted) showSnack(context, 'Link copied: $_kSite');
+                  }
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    children: [
+                      Icon(Icons.language_rounded, color: cs.primary),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Download page', style: text.titleSmall),
+                            Text(_kSite, style: text.bodySmall?.copyWith(color: cs.primary, decoration: TextDecoration.underline)),
+                          ],
+                        ),
+                      ),
+                      Icon(Icons.open_in_new_rounded, size: 18, color: cs.onSurfaceVariant),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ),
         );

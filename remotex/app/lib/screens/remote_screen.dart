@@ -48,7 +48,10 @@ class _RemoteScreenState extends State<RemoteScreen> {
   bool _dragging = false;
   final Set<String> _mods = {};
   bool _fill = true; // desktop picture fills the whole pad (cropped) or fits inside it
-  bool _preview = true; // user switch for the live PC screen
+  // Live PC screen: off when the app starts, stays as the user set it until the app is closed.
+  static bool _previewPref = false;
+  bool get _preview => _previewPref;
+  set _preview(bool v) => _previewPref = v;
 
   double _accX = 0, _accY = 0, _accSX = 0, _accSY = 0;
   Timer? _flushTimer;
