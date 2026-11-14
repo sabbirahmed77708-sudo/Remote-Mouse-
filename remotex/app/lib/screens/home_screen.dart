@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../app_scope.dart';
 import '../models/saved_pc.dart';
 import '../services/connection_controller.dart';
-import '../services/update_service.dart';
 import '../widgets/common.dart';
 import '../widgets/logo.dart';
+import '../widgets/pc_setup_card.dart';
 import '../widgets/update_card.dart';
 
 /// Dashboard: connection card, quick actions and saved PCs.
@@ -60,7 +59,7 @@ class HomeScreen extends StatelessWidget {
               for (final pc in scope.app.pcs) _PcTile(pc: pc, active: conn.pc?.id == pc.id && conn.connected),
             // always shown: also needed for a second PC, or to reinstall
             const SizedBox(height: 10),
-            const _PcSetupCard(),
+            const PcSetupCard(),
           ],
         );
       },
@@ -265,73 +264,6 @@ class _PcTile extends StatelessWidget {
                   final ok = await scope.conn.connectSaved(pc);
                   if (!ok && context.mounted) showSnack(context, scope.conn.error ?? 'Could not connect', error: true);
                 },
-        ),
-      ),
-    );
-  }
-}
-
-/// Tells the user how to get the tiny PC helper, without leaving the app.
-class _PcSetupCard extends StatelessWidget {
-  const _PcSetupCard();
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final text = Theme.of(context).textTheme;
-    return Card(
-      elevation: 0,
-      margin: EdgeInsets.zero,
-      color: cs.primaryContainer,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.computer_rounded, color: cs.onPrimaryContainer),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text('Set up a PC (install once)',
-                      style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: cs.onPrimaryContainer)),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'This phone app is the only app you use. Your PC just needs a small helper installed once; '
-              'it runs quietly in the background and asks you to press Allow. On the PC open this link and '
-              'download "Remote-Mouse-Setup.exe". If Windows shows "Windows protected your PC", use the install command instead: '
-              'paste it into PowerShell on the PC and the warning does not appear.',
-              style: text.bodyMedium?.copyWith(color: cs.onPrimaryContainer),
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              children: [
-                FilledButton.icon(
-                  onPressed: () async {
-                    await Clipboard.setData(const ClipboardData(text: kPcDownloadPage));
-                    if (context.mounted) showSnack(context, 'Link copied. Send it to your PC.');
-                  },
-                  icon: const Icon(Icons.copy_rounded),
-                  label: const Text('Copy link'),
-                ),
-                FilledButton.tonalIcon(
-                  onPressed: () async {
-                    await Clipboard.setData(const ClipboardData(text: kPcInstallCommand));
-                    if (context.mounted) {
-                      showSnack(context, 'Command copied. On the PC open PowerShell, paste it and press Enter.');
-                    }
-                  },
-                  icon: const Icon(Icons.terminal_rounded),
-                  label: const Text('Copy install command'),
-                ),
-              ],
-            ),
-          ],
         ),
       ),
     );
