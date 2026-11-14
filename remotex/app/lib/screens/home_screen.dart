@@ -54,12 +54,13 @@ class HomeScreen extends StatelessWidget {
               ],
             ),
             const SectionTitle('Saved PCs'),
-            if (scope.app.pcs.isEmpty) ...[
-              const _PcSetupCard(),
-              const SizedBox(height: 10),
-              _EmptyCard(onConnect: onConnect),
-            ] else
+            if (scope.app.pcs.isEmpty)
+              _EmptyCard(onConnect: onConnect)
+            else
               for (final pc in scope.app.pcs) _PcTile(pc: pc, active: conn.pc?.id == pc.id && conn.connected),
+            // always shown: also needed for a second PC, or to reinstall
+            const SizedBox(height: 10),
+            const _PcSetupCard(),
           ],
         );
       },
@@ -293,7 +294,7 @@ class _PcSetupCard extends StatelessWidget {
                 Icon(Icons.computer_rounded, color: cs.onPrimaryContainer),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text('Step 1: set up your PC (once)',
+                  child: Text('Set up a PC (install once)',
                       style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: cs.onPrimaryContainer)),
                 ),
               ],

@@ -7,7 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 /// Version of this build. Keep in sync with `version:` in pubspec.yaml.
-const String kAppVersion = '1.7.0';
+const String kAppVersion = '1.7.1';
 
 const String kRepo = 'sabbirahmed77708-sudo/remote-mouse-';
 const String kReleasesPage = 'https://github.com/$kRepo/releases';
