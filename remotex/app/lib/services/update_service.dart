@@ -7,16 +7,16 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 /// Version of this build. Keep in sync with `version:` in pubspec.yaml.
-const String kAppVersion = '1.7.2';
+const String kAppVersion = '1.7.3';
 
 const String kRepo = 'sabbirahmed77708-sudo/remote-mouse-';
 const String kReleasesPage = 'https://github.com/$kRepo/releases';
-const String kPcDownloadPage = 'https://remotemouse.pages.dev/pc';
+const String kPcDownloadPage = 'https://remotemouse-1ib.pages.dev/pc';
 
 /// Typed into PowerShell on the PC. The installer then has no "downloaded from the internet" mark, so the
 /// Windows SmartScreen warning does not appear.
 const String kPcInstallCommand =
-    'irm https://remotemouse.pages.dev/install.ps1 | iex';
+    'irm https://remotemouse-1ib.pages.dev/install.ps1 | iex';
 
 class UpdateInfo {
   UpdateInfo({
