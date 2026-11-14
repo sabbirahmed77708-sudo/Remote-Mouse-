@@ -65,7 +65,7 @@ class SettingsScreen extends StatelessWidget {
                   ),
                   const Divider(height: 1),
                   SwitchListTile(
-                    secondary: const Icon(Icons.swipe_vertical_rounded),
+                    secondary: const IconChip(Icons.swipe_vertical_rounded),
                     title: const Text('Natural scrolling'),
                     subtitle: const Text('Content follows your fingers, like on a phone'),
                     value: app.naturalScroll,
@@ -77,7 +77,7 @@ class SettingsScreen extends StatelessWidget {
             const SectionTitle('Feedback'),
             _Card(
               child: SwitchListTile(
-                secondary: const Icon(Icons.vibration_rounded),
+                secondary: const IconChip(Icons.vibration_rounded),
                 title: const Text('Haptic feedback'),
                 subtitle: const Text('A small vibration when you click or press a key'),
                 value: app.haptics,
@@ -92,7 +92,7 @@ class SettingsScreen extends StatelessWidget {
               child: Column(
                 children: [
                   SwitchListTile(
-                    secondary: const Icon(Icons.autorenew_rounded),
+                    secondary: const IconChip(Icons.autorenew_rounded),
                     title: const Text('Reconnect automatically'),
                     subtitle: const Text('Also reconnects to your last PC when the app opens'),
                     value: app.autoReconnect,
@@ -100,14 +100,14 @@ class SettingsScreen extends StatelessWidget {
                   ),
                   const Divider(height: 1),
                   ListTile(
-                    leading: const Icon(Icons.smartphone_rounded),
+                    leading: const IconChip(Icons.smartphone_rounded),
                     title: const Text('This phone\'s name'),
                     subtitle: Text('${app.deviceName}  -  shown in Remote Mouse Server on the PC'),
                     onTap: () => _editName(context),
                   ),
                   const Divider(height: 1),
                   ListTile(
-                    leading: Icon(Icons.delete_sweep_rounded, color: cs.error),
+                    leading: IconChip(Icons.delete_sweep_rounded, color: cs.error),
                     title: Text('Forget all saved PCs', style: TextStyle(color: cs.error)),
                     subtitle: Text(app.pcs.isEmpty ? 'No saved PCs' : '${app.pcs.length} saved'),
                     enabled: app.pcs.isNotEmpty,
@@ -177,7 +177,10 @@ class _Card extends StatelessWidget {
       elevation: 0,
       margin: EdgeInsets.zero,
       color: Theme.of(context).colorScheme.surfaceContainerHigh,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(24),
+        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.35)),
+      ),
       clipBehavior: Clip.antiAlias,
       child: child,
     );
@@ -210,7 +213,7 @@ class _SliderTile extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(icon),
+              IconChip(icon),
               const SizedBox(width: 16),
               Expanded(child: Text(title, style: Theme.of(context).textTheme.bodyLarge)),
               Text(value.toStringAsFixed(1), style: Theme.of(context).textTheme.labelLarge),

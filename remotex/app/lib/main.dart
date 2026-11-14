@@ -53,10 +53,58 @@ class _RemoteXAppState extends State<RemoteXApp> with WidgetsBindingObserver {
   }
 
   ThemeData _theme(Brightness b) {
+    var scheme = ColorScheme.fromSeed(seedColor: _seed, brightness: b);
+    if (b == Brightness.dark) {
+      // deep blue-black surfaces, the same look as the remote screen
+      scheme = scheme.copyWith(
+        surface: const Color(0xFF0B0F16),
+        surfaceContainerLowest: const Color(0xFF080B11),
+        surfaceContainerLow: const Color(0xFF10151E),
+        surfaceContainer: const Color(0xFF131923),
+        surfaceContainerHigh: const Color(0xFF171D28),
+        surfaceContainerHighest: const Color(0xFF222B3A),
+      );
+    }
     return ThemeData(
       useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(seedColor: _seed, brightness: b),
+      colorScheme: scheme,
+      scaffoldBackgroundColor: scheme.surface,
       visualDensity: VisualDensity.standard,
+      appBarTheme: AppBarTheme(
+        backgroundColor: scheme.surface,
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
+        centerTitle: false,
+        titleTextStyle: TextStyle(color: scheme.onSurface, fontSize: 20, fontWeight: FontWeight.w800),
+      ),
+      cardTheme: CardThemeData(
+        elevation: 0,
+        margin: EdgeInsets.zero,
+        color: scheme.surfaceContainerHigh,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24), side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.35))),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          minimumSize: const Size(0, 48),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+      ),
+      tabBarTheme: TabBarThemeData(
+        indicatorSize: TabBarIndicatorSize.label,
+        dividerColor: Colors.transparent,
+        labelStyle: const TextStyle(fontWeight: FontWeight.w700),
+      ),
+      listTileTheme: ListTileThemeData(
+        iconColor: scheme.primary,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+      dividerTheme: DividerThemeData(color: scheme.outlineVariant.withValues(alpha: 0.3), space: 1),
+      snackBarTheme: SnackBarThemeData(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
     );
   }
 
