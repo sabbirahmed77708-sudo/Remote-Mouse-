@@ -25,7 +25,7 @@ class HomeScreen extends StatelessWidget {
       builder: (context, _) {
         final conn = scope.conn;
         return ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           children: [
             Row(
               children: [
@@ -47,7 +47,7 @@ class HomeScreen extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
             UpdateCard(update: scope.update, compact: true),
             _ConnectionCard(conn: conn, onConnect: onConnect, onOpen: () => onNavigate(1)),
             const SectionTitle('Control'),
@@ -89,9 +89,20 @@ class HomeScreen extends StatelessWidget {
               _EmptyCard(onConnect: onConnect)
             else
               for (final pc in scope.app.pcs) _PcTile(pc: pc, active: conn.pc?.id == pc.id && conn.connected),
-            // always shown: also needed for a second PC, or to reinstall
-            const SizedBox(height: 14),
-            const PcSetupCard(),
+            // the illustrated guide lives in a sheet, so the home stays on one page
+            const SizedBox(height: 12),
+            _SetupTile(
+              onTap: () => showModalBottomSheet<void>(
+                context: context,
+                isScrollControlled: true,
+                useSafeArea: true,
+                backgroundColor: Colors.transparent,
+                builder: (_) => const Padding(
+                  padding: EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  child: SingleChildScrollView(child: PcSetupCard()),
+                ),
+              ),
+            ),
           ],
         );
       },
@@ -378,6 +389,46 @@ class _PcTile extends StatelessWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+
+class _SetupTile extends StatelessWidget {
+  const _SetupTile({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    return InkWell(
+      borderRadius: BorderRadius.circular(22),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(22),
+          gradient: const LinearGradient(colors: [Color(0xFF1D2F52), Color(0xFF111A2E)]),
+          border: Border.all(color: Colors.white12),
+        ),
+        child: Row(
+          children: [
+            const IconChip(Icons.computer_rounded, color: Color(0xFF8AB4FF)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Set up a PC', style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                  Text('Step-by-step guide with pictures', style: text.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                ],
+              ),
+            ),
+            Icon(Icons.keyboard_arrow_up_rounded, color: cs.onSurfaceVariant),
+          ],
         ),
       ),
     );
