@@ -19,6 +19,13 @@ class NativeBridge {
     } catch (_) {}
   }
 
+  /// Keeps the screen on and Wi-Fi in low-latency mode while the remote is in use.
+  static Future<void> keepAlive(bool on) async {
+    try {
+      await _channel.invokeMethod<void>('keepAlive', {'on': on});
+    } catch (_) {}
+  }
+
   /// Opens [url] in the phone's browser. False when that was not possible.
   static Future<bool> openUrl(String url) async {
     try {

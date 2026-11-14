@@ -1,6 +1,6 @@
-; Builds dist\Remote-Mouse-Setup.exe from dist\RemoteXServer.exe.   iscc /DAppVersion=1.7.5 installer.iss
+; Builds dist\Remote-Mouse-Setup.exe from dist\RemoteXServer.exe.   iscc /DAppVersion=1.7.6 installer.iss
 #ifndef AppVersion
-  #define AppVersion "1.7.5"
+  #define AppVersion "1.7.6"
 #endif
 
 [Setup]

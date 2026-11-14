@@ -94,6 +94,11 @@ class MainActivity : FlutterActivity() {
                 } catch (e: Exception) { }
                 result.success(null)
             }
+            "keepAlive" -> {
+                val on = call.argument<Boolean>("on") ?: false
+                try { setKeepAlive(on) } catch (e: Exception) { }
+                result.success(null)
+            }
             "openUrl" -> {
                 try {
                     startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(call.argument<String>("url") ?: "")))
@@ -177,7 +182,28 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
+
+    /** While the remote is open: keep the screen on and the Wi-Fi radio in low-latency mode. */
+    private fun setKeepAlive(on: Boolean) {
+        if (on) {
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            if (wifiLock == null) {
+                val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+                val mode = if (Build.VERSION.SDK_INT >= 29)
+                    android.net.wifi.WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                else android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                wifiLock = wm.createWifiLock(mode, "remotex").apply { setReferenceCounted(false) }
+            }
+            if (wifiLock?.isHeld == false) wifiLock?.acquire()
+        } else {
+            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            if (wifiLock?.isHeld == true) wifiLock?.release()
+        }
+    }
+
     override fun onDestroy() {
+        try { setKeepAlive(false) } catch (e: Exception) { }
         hid?.close()
         super.onDestroy()
     }

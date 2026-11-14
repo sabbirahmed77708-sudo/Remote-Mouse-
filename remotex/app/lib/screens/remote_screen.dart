@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import '../app_scope.dart';
 import '../models/running_app.dart';
 import '../services/connection_controller.dart';
+import '../services/native_bridge.dart';
 import '../widgets/common.dart';
 
 /// The remote control: live PC screen as a touchpad, with panels that slide up from the bottom
@@ -74,6 +75,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
   @override
   void initState() {
     super.initState();
+    NativeBridge.keepAlive(true);
     // ~125 updates per second: smooth, and many touch events collapse into one message
     _flushTimer = Timer.periodic(const Duration(milliseconds: 8), (_) => _flush());
     // the list of windows open on the PC: quickly while the Apps panel is open, now and then otherwise
@@ -99,6 +101,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
 
   @override
   void dispose() {
+    NativeBridge.keepAlive(false);
     _scope?.conn.watchScreen(false);
     _flushTimer?.cancel();
     _appsTimer?.cancel();

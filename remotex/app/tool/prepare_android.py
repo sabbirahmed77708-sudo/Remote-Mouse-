@@ -126,6 +126,8 @@ def patch_manifest():
             '    <uses-permission android:name="android.permission.INTERNET"/>\n'
             '    <uses-permission android:name="android.permission.CAMERA"/>\n'
             '    <uses-permission android:name="android.permission.VIBRATE"/>\n'
+            '    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>\n'
+            '    <uses-permission android:name="android.permission.WAKE_LOCK"/>\n'
             '    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>\n'
             '    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>\n'
             '    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>\n'

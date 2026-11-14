@@ -64,7 +64,7 @@ class Transport:
                 self._handler, self.host, self.port,
                 ssl=self.ssl_context,
                 max_size=P.MAX_MESSAGE_BYTES,
-                ping_interval=10, ping_timeout=10,
+                ping_interval=5, ping_timeout=6,
                 compression=None,
                 origins=[None],  # native apps send no Origin header; refuse browsers
             ) as server:

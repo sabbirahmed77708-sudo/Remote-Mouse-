@@ -250,7 +250,7 @@ class ConnectionController extends ChangeNotifier {
           onError: (Object _) => _onClosed(conn),
           cancelOnError: true,
         );
-    _heartbeat = Timer.periodic(const Duration(seconds: 5), (_) => _beat(conn));
+    _heartbeat = Timer.periodic(const Duration(seconds: 2), (_) => _beat(conn));
     _beat(conn);
     if (_screenWanted) _sendScreen(true);
   }
@@ -291,7 +291,7 @@ class ConnectionController extends ChangeNotifier {
 
   void _beat(RemoteXConnection conn) {
     if (conn != _conn) return;
-    if (DateTime.now().difference(_lastPong) > const Duration(seconds: 12)) {
+    if (DateTime.now().difference(_lastPong) > const Duration(seconds: 6)) {
       // The PC has gone silent (Wi-Fi dropped, PC asleep...). Treat as lost.
       unawaited(conn.close(4008, 'timeout'));
       _onClosed(conn);
@@ -328,7 +328,7 @@ class ConnectionController extends ChangeNotifier {
 
   Future<void> _reconnectLoop() async {
     final gen = ++_generation;
-    var delay = 1;
+    var delay = 0;
     _set(LinkState.reconnecting);
     while (_wantConnected && gen == _generation && !_disposed) {
       final target = pc;
@@ -349,9 +349,10 @@ class ConnectionController extends ChangeNotifier {
         }
         error = e.message;
         if (!_disposed) notifyListeners();
-        final wait = e.code == 'locked' ? 30 : delay;
-        await Future<void>.delayed(Duration(seconds: wait));
-        delay = min(delay * 2, 10);
+        const wait = 30;
+        await Future<void>.delayed(
+            e.code == 'locked' ? Duration(seconds: wait) : Duration(milliseconds: 400 * (1 << delay)));
+        delay = min(delay + 1, 4); // 0.4, 0.8, 1.6, 3.2, 6.4 s
       }
     }
   }
